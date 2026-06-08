@@ -107,7 +107,8 @@ research-input (§4) + write-up
   → COMPOSE        LLM: findings → scene-graph IR (spatial narrative + tour + layout)
   → GENERATE  ⚠️   agent (Hermes execute_code, docker): IR → presentation.svg + camera.json
                     + player.js + index.html
-  → RENDER+SHOT    Playwright in sandbox: drive player to each camera stop, screenshot @ viewport
+  → RENDER+SHOT    Playwright in sandbox: jump INSTANTLY to each stop's computed viewBox
+                    (no eased transition), wait for a settled frame, screenshot @ viewport
   → VISION CRITIQUE vision model: per-stop structured critique vs. scene.intent + global checks
   → REVISE         agent edits IR/SVG for flagged issues; re-render only affected stops
   ↑__________ loop (bounded) until quality bar or budget; then PUBLISH best-effort
@@ -148,6 +149,15 @@ Global checks across stops: visual consistency, readable min font size at the st
 - **Responsive:** scales the canvas to the viewport while preserving aspect; readable on mobile.
 - Unit-testable pure functions for camera math (bbox → viewBox, interpolation).
 
+## 7.1 Font fidelity (correctness-critical — the vision loop depends on it)
+
+The "screenshots match what viewers see" guarantee only holds if **fonts are identical** between the sandbox render and a viewer's browser. Sandbox Chromium (Linux) ships different fonts than a viewer's Mac/Windows/mobile browser, and even generic `sans-serif` resolves to different actual fonts with different metrics → text wraps/overflows differently → the vision model approves a layout the viewer sees clipped. Therefore:
+
+- **Embed/self-host the typeface.** `presentation.svg` uses a small, fixed set of **self-hosted** font files served from the **presentation origin** (`assets/fonts/…`), referenced via `@font-face`. This is **CSP-clean** under `default-src 'self'` (a CDN font would be *blocked* — `font-src` falls back to `default-src`). Add `font-src 'self'` explicitly.
+- **Pin the sandbox font set to match** the embedded fonts so Playwright renders exactly what ships.
+- **Do NOT convert text→paths.** It would fix metrics but kills selectable text, the `<text>` accessibility in §3, and live citation links in §7 — resolve fidelity via embedded fonts instead.
+- **Verify the guarantee concretely** (planning task): a stop rendered in sandbox Chromium must match the same SVG in stock Safari/Chrome. Until that passes, "critiques match reality" is conditional.
+
 ## 8. Image generation (YAGNI-gated)
 
 - Only when a scene's content genuinely needs generated imagery (diagram/illustration). Default: none.
@@ -164,6 +174,7 @@ Global checks across stops: visual consistency, readable min font size at the st
 ## 10. Quality, cost & determinism
 
 - Per-job budgets (tokens, wall-clock, max iterations, max images) — all configurable, all enforced.
+- **Cost is multiplicative** — `stops × iterations` vision calls + screenshots. A 20-stop deck × 4 iterations ≈ 80 vision calls + 80 renders per publish (minutes-long, real $ on BYO/OpenRouter). So **also cap stops per presentation**, and record an expected **cost + wall-clock per publish** in the budget defaults so the bound is chosen with eyes open. Re-rendering only affected stops (§5.2) is the main mitigation.
 - Research results cached per presentation so re-publish doesn't re-research.
 - `manifest.quality` records: converged?, iterations used, residual issues, budget spent.
 - Re-runs are idempotent into a fresh artifact dir; publishing swaps atomically.
@@ -186,7 +197,7 @@ The **Generate** + **Revise** stages assume Hermes drives reliably headless, exe
 ## 13. Open items
 
 1. **Compose layout strategy** — agent-proposed bboxes vs. a deterministic packing helper feeding the agent. Lean: deterministic helper proposes, agent refines, vision loop polices. Finalize in planning.
-2. **Default iteration / budget numbers** (N, tokens, wall-clock, max images) — set sane defaults in planning; expose as config.
+2. **Default iteration / budget numbers** (N, **max stops**, tokens, wall-clock, max images) + expected cost/wall-clock per publish — set sane defaults in planning; expose as config.
 3. **Vision model choice** for critique (Claude vision tier via OpenRouter/Nous) — pick in planning; must accept image input.
 4. **Transition vocabulary** in `camera.json` (zoom/pan/rotate/cut) — start minimal (zoom + pan), expand later.
 5. Depends on **#2** delivering the §4 research-input contract, and the **Milestone-zero spike** for the ⚠️ stages.
