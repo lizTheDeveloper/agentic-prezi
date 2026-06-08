@@ -53,43 +53,24 @@ export function toContractCitation(c) {
 }
 
 /**
- * Deterministic fallback (no LLM): turn the top candidates into one finding each,
- * importance ranked by position. Keeps the pipeline fully functional on scholarly
- * sources alone (§8). Abstract-derived detail; never fabricates a citation.
- */
-export function deterministicFindings(citations, { max = 8 } = {}) {
-  return citations.slice(0, max).map((c, i) => {
-    const detail = (c.abstract || c.title || '').slice(0, 400).trim() || c.title;
-    return {
-      claim: c.title || `Finding ${i + 1}`,
-      detail: detail || 'See cited source.',
-      importance: Math.max(1, 5 - Math.floor(i / 2)), // 5,5,4,4,3,3,2,2...
-      citations: [c.id],
-    };
-  });
-}
-
-/**
- * Produce findings (model-mapped or deterministic). Output findings reference
- * citation ids; grounding (ground.mjs) then enforces provenance + resolvability.
- * @param opts.llm optional LLM; falls back to deterministicFindings.
+ * Produce findings by mapping claims to citation ids. LLM-backed and REQUIRED — there is
+ * no deterministic fallback: if the model is absent or fails, this throws so the failure
+ * is visible rather than emitting naive title-as-claim findings. Grounding (ground.mjs)
+ * then enforces provenance + resolvability on whatever the model proposes.
+ * @param opts.llm REQUIRED LLM; errors propagate.
  */
 export async function synthesizeFindings({ topic, writeup = '', citations, llm = null }) {
-  if (!llm) return deterministicFindings(citations);
+  if (!llm) throw new Error('synthesizeFindings: an llm is required (no fallback)');
 
   const sourceList = citations.map((c) =>
     `[${c.id}] ${c.title} (${c.year ?? 'n.d.'}, ${c.venue || 'unknown venue'})` +
     (c.abstract ? ` — ${c.abstract.slice(0, 300)}` : '')).join('\n');
 
-  let out;
-  try {
-    out = await llm.json({
-      system: SYSTEM,
-      user: `TOPIC: ${topic}\n\nWRITE-UP (data):\n${writeup}\n\nSOURCES (data):\n${sourceList}`,
-    });
-  } catch {
-    return deterministicFindings(citations); // robust to provider failure
-  }
+  // Let provider errors propagate — the caller must see a failed synthesis, not a stub.
+  const out = await llm.json({
+    system: SYSTEM,
+    user: `TOPIC: ${topic}\n\nWRITE-UP (data):\n${writeup}\n\nSOURCES (data):\n${sourceList}`,
+  });
 
   const findings = Array.isArray(out?.findings) ? out.findings : [];
   // Light shape coercion only — real validation/grounding happens downstream.

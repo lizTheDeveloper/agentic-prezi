@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
-  prepareCitations, toContractCitation, deterministicFindings, synthesizeFindings, sanitizeFigure,
+  prepareCitations, toContractCitation, synthesizeFindings, sanitizeFigure,
 } from './synthesize.mjs';
 
 const ranked = [
@@ -36,21 +36,9 @@ test('toContractCitation drops internal fields', () => {
   assert.equal(c.abstract, undefined);
 });
 
-test('deterministicFindings produces one cited finding per candidate', () => {
+test('synthesizeFindings throws without an llm (no fallback)', async () => {
   const { citations } = prepareCitations(ranked);
-  const findings = deterministicFindings(citations);
-  assert.equal(findings.length, 2);
-  assert.deepEqual(findings[0].citations, ['smith2025']);
-  assert.ok(findings[0].importance >= 1 && findings[0].importance <= 5);
-  // every cited id exists in the citation set (grounding precondition)
-  const ids = new Set(citations.map((c) => c.id));
-  for (const f of findings) for (const id of f.citations) assert.ok(ids.has(id));
-});
-
-test('synthesizeFindings falls back to deterministic without an llm', async () => {
-  const { citations } = prepareCitations(ranked);
-  const findings = await synthesizeFindings({ topic: 'T', citations });
-  assert.equal(findings.length, 2);
+  await assert.rejects(() => synthesizeFindings({ topic: 'T', citations }), /llm is required/);
 });
 
 test('synthesizeFindings coerces and clamps llm output', async () => {
@@ -86,9 +74,8 @@ test('synthesizeFindings drops a malformed figure but keeps the finding (gracefu
   assert.deepEqual(findings[1].figure, { caption: 'ok' });
 });
 
-test('synthesizeFindings recovers from a throwing llm', async () => {
+test('synthesizeFindings propagates a throwing llm (no fallback)', async () => {
   const { citations } = prepareCitations(ranked);
   const llm = { json: async () => { throw new Error('boom'); } };
-  const findings = await synthesizeFindings({ topic: 'T', citations, llm });
-  assert.equal(findings.length, 2); // deterministic fallback
+  await assert.rejects(() => synthesizeFindings({ topic: 'T', citations, llm }), /boom/);
 });

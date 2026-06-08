@@ -5,11 +5,14 @@
 //   echo "write-up" | node src/research/cli.mjs
 //   node src/research/cli.mjs --topk 10 --no-cache "write-up"
 //
-// Runs LLM-free by default (deterministic synthesis on scholarly sources, §8); wire
-// in a real `llm` once the Nous Portal provider is decided.
+// Scope + synthesis run through a real LLM via the Nous Portal (OpenAI-compatible) and
+// REQUIRE NOUS_RESEARCH_API_KEY — override model with NOUS_RESEARCH_MODEL, host with
+// NOUS_RESEARCH_BASE_URL. There is no deterministic fallback: a missing key or a provider
+// failure errors out loudly instead of emitting degraded results.
 
 import { readFileSync } from 'node:fs';
 import { runResearch } from './pipeline.mjs';
+import { makeNousLlm, DEFAULT_MODEL } from './providers/nous.mjs';
 
 function parseArgs(argv) {
   const opts = { budgets: {}, cache: {} };
@@ -37,7 +40,15 @@ async function main() {
     process.exit(2);
   }
 
+  const llm = makeNousLlm();
+  if (!llm) {
+    console.error('✗ NOUS_RESEARCH_API_KEY is not set — scope + synthesis require an LLM (no fallback).');
+    process.exit(1);
+  }
+  console.error(`→ scope + synthesis via ${process.env.NOUS_RESEARCH_MODEL || DEFAULT_MODEL} (Nous Portal)`);
+
   const { doc, validation, trace } = await runResearch(writeup, {
+    llm,
     budgets: opts.budgets,
     cache: opts.cache,
   });
