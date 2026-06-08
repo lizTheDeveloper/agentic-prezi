@@ -2,7 +2,8 @@
 //   SCOPE → DISCOVER → RANK/FILTER → (EXTRACT) → VERIFY ⚑ → SYNTHESIZE
 // Emits the #3 §4 findings contract and validates it before returning. All stages
 // are budget-bounded (§6) and dependency-injected (adapters / llm / resolver) so the
-// whole thing runs and unit-tests offline (§8 insulation from the undecided LLM).
+// whole thing unit-tests offline. The llm is REQUIRED — scope + synthesis have no
+// fallback; an absent or failing provider throws rather than degrading.
 
 import { resolveBudgets } from './budgets.mjs';
 import { scope as scopeStage } from './scope.mjs';
@@ -25,7 +26,7 @@ export const DEFAULT_ADAPTERS = [openalex, crossref, arxiv, pubmed];
  *
  * @param writeup            user's write-up (untrusted data)
  * @param opts.adapters      SourceAdapter[]                       (default: scholarly trio)
- * @param opts.llm           LLM for scope/synthesis               (default: deterministic fallback)
+ * @param opts.llm           LLM for scope/synthesis               (REQUIRED — throws if absent)
  * @param opts.resolver      async (citation)=>bool liveness check (default: isResolvable)
  * @param opts.budgets       budget overrides (§6)
  * @param opts.cache         adapter-cache options ({ enabled, now, ttlMs })
@@ -40,6 +41,7 @@ export async function runResearch(writeup, opts = {}) {
     cache = {},
     nowYear,
   } = opts;
+  if (!llm) throw new Error('runResearch: an llm is required (no deterministic fallback)');
   const budgets = resolveBudgets(opts.budgets);
   const trace = { stages: {} };
   const deadline = Date.now() + budgets.wallClockMs;

@@ -8,6 +8,21 @@ function corpusAdapter(name, works) {
   return { name, search: async () => works.map((w) => ({ ...w, source: name })) };
 }
 
+// Fixture LLM (the pipeline now REQUIRES one — no deterministic fallback). Scope returns a
+// fixed shape; synthesis emits one finding per source id it sees in the prompt's source
+// list, so findings always cite real, prepared citation ids.
+function fakeLlm() {
+  return {
+    json: async ({ system, user }) => {
+      if (/scoping/i.test(system)) {
+        return { topic: 'CRISPR gene editing for sickle cell disease', sub_queries: ['crispr sickle cell', 'base editing safety'], narrative_outline: ['Hook', 'Findings', 'Implications'] };
+      }
+      const ids = [...user.matchAll(/\[([a-z0-9]+)\]/gi)].map((m) => m[1]);
+      return { findings: ids.map((id, i) => ({ claim: `Finding about ${id}`, detail: 'detail', importance: Math.max(1, 5 - i), citations: [id] })) };
+    },
+  };
+}
+
 const NOW_YEAR = 2026;
 const cacheOff = { enabled: false };
 
@@ -22,7 +37,7 @@ test('end-to-end: produces a valid, fully-grounded findings doc', async () => {
   const adapters = [corpusAdapter('openalex', richCorpus), corpusAdapter('crossref', richCorpus)];
   const { doc, validation, trace } = await runResearch(
     'CRISPR gene editing therapies for sickle cell disease and their safety.',
-    { adapters, resolver: async () => true, cache: cacheOff, nowYear: NOW_YEAR },
+    { adapters, llm: fakeLlm(), resolver: async () => true, cache: cacheOff, nowYear: NOW_YEAR },
   );
   assert.equal(validation.valid, true, validation.errors.join('; '));
   assert.ok(!doc.insufficient_sources);
@@ -41,7 +56,7 @@ test('end-to-end: unresolvable sources → clean insufficient_sources doc', asyn
   const adapters = [corpusAdapter('openalex', richCorpus)];
   const { doc, validation } = await runResearch(
     'CRISPR safety.',
-    { adapters, resolver: async () => false, cache: cacheOff, nowYear: NOW_YEAR }, // nothing resolves
+    { adapters, llm: fakeLlm(), resolver: async () => false, cache: cacheOff, nowYear: NOW_YEAR }, // nothing resolves
   );
   assert.equal(validation.valid, true, validation.errors.join('; '));
   assert.equal(doc.insufficient_sources, true);
@@ -53,6 +68,7 @@ test('end-to-end: unresolvable sources → clean insufficient_sources doc', asyn
 test('end-to-end: empty corpus still yields a valid (insufficient) doc', async () => {
   const { doc, validation } = await runResearch('obscure topic', {
     adapters: [corpusAdapter('openalex', [])],
+    llm: fakeLlm(),
     resolver: async () => true,
     cache: cacheOff,
     nowYear: NOW_YEAR,
@@ -94,6 +110,7 @@ test('wall-clock budget timeout returns a clean partial doc (§6)', async () => 
   } };
   const { doc, validation, trace } = await runResearch('CRISPR', {
     adapters: [slow],
+    llm: fakeLlm(),
     resolver: async () => true,
     cache: cacheOff,
     nowYear: NOW_YEAR,
@@ -109,7 +126,14 @@ test('wall-clock budget timeout returns a clean partial doc (§6)', async () => 
 test('runResearch output always satisfies the contract validator', async () => {
   const adapters = [corpusAdapter('openalex', richCorpus)];
   const { doc } = await runResearch('CRISPR delivery vectors', {
-    adapters, resolver: async () => true, cache: cacheOff, nowYear: NOW_YEAR,
+    adapters, llm: fakeLlm(), resolver: async () => true, cache: cacheOff, nowYear: NOW_YEAR,
   });
   assert.equal(validateFindingsDoc(doc).valid, true);
+});
+
+test('runResearch throws when no llm is provided (no deterministic fallback)', async () => {
+  await assert.rejects(
+    () => runResearch('CRISPR', { adapters: [corpusAdapter('openalex', richCorpus)], cache: cacheOff }),
+    /llm is required/,
+  );
 });

@@ -1,7 +1,7 @@
-// LLM interface for the SCOPE and SYNTHESIZE stages. The provider (Nous Portal /
-// Hermes Tool Gateway) is an OPEN DECISION (CLAUDE.md) and gates #2/#3 — so the
-// pipeline injects an `llm` and degrades gracefully without one (§8 insulation:
-// research still runs on scholarly sources via deterministic fallbacks).
+// LLM interface for the SCOPE and SYNTHESIZE stages. The provider is the Nous Portal
+// (src/research/providers/nous.mjs); the pipeline injects an `llm` satisfying this
+// contract. The llm is REQUIRED — there is no fallback, so scope/synthesis throw when
+// it is absent or fails (the I/O is injected only to keep the stages unit-testable).
 //
 // Contract an LLM impl must satisfy:
 //   llm.json({ system, user, schemaHint }) → Promise<object>   // returns parsed JSON

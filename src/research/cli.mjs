@@ -4,12 +4,11 @@
 //   node src/research/cli.mjs "your write-up text here"
 //   echo "write-up" | node src/research/cli.mjs
 //   node src/research/cli.mjs --topk 10 --no-cache "write-up"
-//   node src/research/cli.mjs --no-llm "write-up"   # force deterministic, scholarly-only
 //
-// Uses a real LLM for scope + synthesis when NOUS_RESEARCH_API_KEY is set (Nous Portal,
-// OpenAI-compatible; override model with NOUS_RESEARCH_MODEL, host with
-// NOUS_RESEARCH_BASE_URL). Without a key — or with --no-llm — it degrades to deterministic
-// synthesis on the scholarly sources (§8 insulation), so the pipeline always runs.
+// Scope + synthesis run through a real LLM via the Nous Portal (OpenAI-compatible) and
+// REQUIRE NOUS_RESEARCH_API_KEY — override model with NOUS_RESEARCH_MODEL, host with
+// NOUS_RESEARCH_BASE_URL. There is no deterministic fallback: a missing key or a provider
+// failure errors out loudly instead of emitting degraded results.
 
 import { readFileSync } from 'node:fs';
 import { runResearch } from './pipeline.mjs';
@@ -23,7 +22,6 @@ function parseArgs(argv) {
     if (a === '--topk') opts.budgets.topK = Number(argv[++i]);
     else if (a === '--subqueries') opts.budgets.maxSubQueries = Number(argv[++i]);
     else if (a === '--no-cache') opts.cache.enabled = false;
-    else if (a === '--no-llm') opts.noLlm = true;
     else if (a === '--trace') opts.showTrace = true;
     else rest.push(a);
   }
@@ -38,14 +36,16 @@ async function main() {
     writeup = readFileSync(0, 'utf8').trim();
   }
   if (!writeup) {
-    console.error('usage: node src/research/cli.mjs [--topk N] [--subqueries N] [--no-cache] [--no-llm] [--trace] "<write-up>"');
+    console.error('usage: node src/research/cli.mjs [--topk N] [--subqueries N] [--no-cache] [--trace] "<write-up>"');
     process.exit(2);
   }
 
-  const llm = opts.noLlm ? null : makeNousLlm();
-  console.error(llm
-    ? `→ scope + synthesis via ${process.env.NOUS_RESEARCH_MODEL || DEFAULT_MODEL} (Nous Portal)`
-    : '→ no LLM (deterministic synthesis on scholarly sources)');
+  const llm = makeNousLlm();
+  if (!llm) {
+    console.error('✗ NOUS_RESEARCH_API_KEY is not set — scope + synthesis require an LLM (no fallback).');
+    process.exit(1);
+  }
+  console.error(`→ scope + synthesis via ${process.env.NOUS_RESEARCH_MODEL || DEFAULT_MODEL} (Nous Portal)`);
 
   const { doc, validation, trace } = await runResearch(writeup, {
     llm,
