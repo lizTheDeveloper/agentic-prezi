@@ -7,6 +7,7 @@ import type { App } from '../src/server.ts';
 import { loadConfig } from '../src/config.ts';
 import type { EmailSender } from '../src/email.ts';
 import type { WorkerOptions } from '../src/worker.ts';
+import { generateStub } from '../src/generator.ts';
 
 // In-memory capturing email sender (no console noise during tests).
 export class CaptureEmail implements EmailSender {
@@ -76,6 +77,9 @@ export interface TestApp {
 }
 
 export async function bootTestApp(worker: WorkerOptions = { pollMs: 1e9 }): Promise<TestApp> {
+  // Hermetic by default: pin the #1 stub generator unless a test injects its own, so the suite
+  // never depends on ambient secrets (NOUS_RESEARCH_API_KEY) or makes live research/LLM calls.
+  if (!worker.generator) worker = { ...worker, generator: generateStub };
   const dataDir = mkdtempSync(join(tmpdir(), 'prezi-test-'));
   const config = loadConfig({
     DB_PATH: ':memory:',

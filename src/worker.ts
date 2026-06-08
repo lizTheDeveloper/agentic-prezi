@@ -4,6 +4,10 @@ import type { Job, RetryPolicy } from './queue.ts';
 import type { Generator } from './generator.ts';
 import { generateStub } from './generator.ts';
 import { mintUniqueSlug } from './slug.ts';
+// #2/#3 engine modules are vanilla .mjs (untyped here; no build step — Node runs TS+ESM directly).
+import { makeNousLlm } from './research/providers/nous.mjs';
+import { makeLocalScorer } from './research/scan.mjs';
+import { makePreziGenerator } from './prezi/generate.mjs';
 
 // In-process job worker. Polls the queue and runs typed handlers. The `generate` handler ties the
 // publish loop together: presentation → generating → mint slug → run generator → published. The
@@ -17,6 +21,19 @@ export interface WorkerOptions {
   generator?: Generator;
   retry?: RetryPolicy;
   pollMs?: number;
+}
+
+/**
+ * Choose the worker's generator (the #2→#3→#1 seam). When an LLM is configured
+ * (NOUS_RESEARCH_API_KEY) the full prezi pipeline runs — research (#2, with the §7.1 injection scan
+ * when PROMPT_GUARD_URL is set) → generate (#3) → publish (#1). Without an LLM the #1 stub is used so
+ * dev/offline still produces a (degenerate) presentation rather than failing the job.
+ */
+export function selectGenerator(): Generator {
+  const llm = makeNousLlm();
+  if (!llm) return generateStub;
+  const scorer = makeLocalScorer();
+  return makePreziGenerator({ llm, ...(scorer ? { scan: { scorer } } : {}) }) as Generator;
 }
 
 export function makeGenerateHandler(generator: Generator): JobHandler {

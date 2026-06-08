@@ -5,7 +5,8 @@
 //   { topic, narrative_outline:[str],
 //     findings:[ { claim, detail, importance:1-5, citations:[id], figure? } ],
 //     citations:[ { id, title, authors:[str], year, venue, doi, url } ],
-//     insufficient_sources?:bool }            // §6 graceful-insufficiency flag
+//     insufficient_sources?:bool,             // §6 graceful-insufficiency flag
+//     quarantined_sources?:int }              // §7.1 count of injection-quarantined sources
 
 const IMPORTANCE_MIN = 1;
 const IMPORTANCE_MAX = 5;
@@ -101,6 +102,11 @@ export function validateFindingsDoc(doc) {
 
   if (doc.insufficient_sources != null && typeof doc.insufficient_sources !== 'boolean') {
     errors.push('insufficient_sources: must be a boolean if present');
+  }
+
+  // §7.1 transparency: count of sources whose free text was quarantined by the injection scan.
+  if (doc.quarantined_sources != null && (!isInt(doc.quarantined_sources) || doc.quarantined_sources < 0)) {
+    errors.push('quarantined_sources: must be a non-negative integer if present');
   }
 
   return { valid: errors.length === 0, errors };

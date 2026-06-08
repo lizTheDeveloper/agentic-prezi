@@ -7,7 +7,7 @@
 
 import { mkdir, writeFile, readFile, rm } from 'node:fs/promises';
 import { join } from 'node:path';
-import { compose, deterministicRevise } from './compose.mjs';
+import { compose, refineNarrative, deterministicRevise } from './compose.mjs';
 import { compileSvg } from './svg.mjs';
 import { compileCamera } from './camera.mjs';
 import { geometricCritique, refineLoop, LOOP_DEFAULTS } from './critique.mjs';
@@ -87,17 +87,22 @@ async function runtimeArtifacts() {
 export async function generatePresentation(input, outDir, deps = {}) {
   const maxIterations = deps.maxIterations ?? LOOP_DEFAULTS.maxIterations;
 
-  // COMPOSE.
-  const { ir } = compose(input.research, { title: input.title, writeup: input.writeup, ...(deps.composeOpts || {}) });
+  // COMPOSE (deterministic structure/layout) → OPTIONAL llm wording refinement (fail-open, §6).
+  let { ir } = compose(input.research, { title: input.title, writeup: input.writeup, ...(deps.composeOpts || {}) });
+  if (deps.llm) ir = await refineNarrative(ir, { llm: deps.llm });
+
+  // Embedded-font family overrides (§7.1) flow into every SVG compile so the emitted markup
+  // references the same faces styles.css declares (and the geometric critique sees what ships).
+  const fontFamilies = deps.fonts?.families;
 
   // GENERATE + critique + REVISE (bounded loop). Defaults are the offline deterministic stages.
-  const render = deps.render ?? ((doc) => ({ ...compileSvg(doc), ir: doc }));
+  const render = deps.render ?? ((doc) => ({ ...compileSvg(doc, { fonts: fontFamilies }), ir: doc }));
   const critic = deps.critic ?? ((rr, doc) => geometricCritique(rr.layout, doc));
   const revise = deps.revise ?? deterministicRevise;
   const loop = await refineLoop(ir, { render, critic, revise, maxIterations, budget: deps.budget });
 
   const finalIr = loop.ir;
-  const { svg } = compileSvg(finalIr);
+  const { svg } = compileSvg(finalIr, { fonts: fontFamilies });
   const camera = compileCamera(finalIr);
   const indexHtml = buildIndexHtml(input.title, svg, camera);
   const runtime = await runtimeArtifacts();
@@ -147,16 +152,23 @@ export async function generatePresentation(input, outDir, deps = {}) {
 }
 
 /**
- * Adapter to the #1 `Generator` seam: (GenInput,outDir)=>Manifest. Since GenInput carries no
- * research, this runs #2 first (or uses an injected `research` doc) — the #2→#3 wiring the worker
- * adopts once the research-in-worker seam lands. NOT yet the worker default (still the stub).
+ * Adapter to the #1 `Generator` seam: (GenInput,outDir)=>Manifest. This is the #2→#3→#1 wiring the
+ * worker adopts when an llm is configured (see src/server.ts): GenInput carries no research, so it
+ * runs #2 (`runResearch`, with the §7.1 injection scan when a scorer is injected) to produce the §4
+ * findings doc, then #3 (`generatePresentation`) to emit the artifact set #1 publishes. An injected
+ * `research` doc short-circuits #2 (tests / re-publish from cache).
+ *
+ * @param deps { llm, scan?, fonts?, research?, ...generatePresentation deps }
  */
 export function makePreziGenerator(deps = {}) {
   return async (genInput, outDir) => {
     let research = deps.research;
     if (!research) {
       const { runResearch } = await import('../research/pipeline.mjs');
-      const r = await runResearch(genInput.sourceWriteup || genInput.title, { llm: deps.llm || null });
+      const r = await runResearch(genInput.sourceWriteup || genInput.title, {
+        llm: deps.llm || null,
+        ...(deps.scan ? { scan: deps.scan } : {}),
+      });
       research = r.doc;
     }
     return generatePresentation(

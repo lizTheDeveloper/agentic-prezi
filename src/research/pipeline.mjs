@@ -11,6 +11,7 @@ import { discover } from './discover.mjs';
 import { rankAndCap } from './rank.mjs';
 import { prepareCitations, synthesizeFindings, toContractCitation } from './synthesize.mjs';
 import { groundFindings } from './ground.mjs';
+import { scanCandidates } from './scan.mjs';
 import { validateFindingsDoc } from './schema.mjs';
 import { isResolvable } from './http.mjs';
 import openalex from './adapters/openalex.mjs';
@@ -31,6 +32,8 @@ export const DEFAULT_ADAPTERS = [openalex, crossref, arxiv, pubmed];
  * @param opts.budgets       budget overrides (§6)
  * @param opts.cache         adapter-cache options ({ enabled, now, ttlMs })
  * @param opts.nowYear       year for recency scoring (testability)
+ * @param opts.scan          §7.1 injection scan: { scorer, threshold?, maxChars? }. Without a
+ *                           scorer the active scan is skipped (layer-1 defenses stay in force).
  * @returns {{ doc, validation, trace }}  doc = §4 contract
  */
 export async function runResearch(writeup, opts = {}) {
@@ -40,6 +43,7 @@ export async function runResearch(writeup, opts = {}) {
     resolver = (c) => isResolvable(c),
     cache = {},
     nowYear,
+    scan = {},
   } = opts;
   if (!llm) throw new Error('runResearch: an llm is required (no deterministic fallback)');
   const budgets = resolveBudgets(opts.budgets);
@@ -73,8 +77,25 @@ export async function runResearch(writeup, opts = {}) {
   // extraction via Hermes cloud browser is the §8 enrichment path, added when the
   // provider is decided. The abstracts on `ranked` are sufficient to synthesize + ground.
 
+  // SCAN 🛡 (§7.1) — active prompt-injection classifier over every ingested free-text field, BEFORE
+  // it can reach the synthesis LLM or be forwarded to #3. Skipped (layer-1 defenses only) when no
+  // scorer is configured. Quarantined free text is blanked; structured metadata survives.
+  let scanned = ranked;
+  let quarantinedSources = 0;
+  if (typeof scan.scorer === 'function') {
+    const res = await scanCandidates(ranked, scan.scorer, {
+      threshold: scan.threshold ?? budgets.injectionThreshold,
+      maxChars: scan.maxChars,
+    });
+    scanned = res.candidates;
+    quarantinedSources = res.quarantinedSources;
+    trace.stages.scan = { enabled: true, scannedSources: res.scannedSources, quarantinedSources, quarantined: res.quarantined };
+  } else {
+    trace.stages.scan = { enabled: false };
+  }
+
   // Prepare the citation table (stable ids) the synthesis model must cite from.
-  const { citations: enrichedCitations } = prepareCitations(ranked);
+  const { citations: enrichedCitations } = prepareCitations(scanned);
 
   // SYNTHESIZE (model maps claims → candidate ids; never invents citations)
   const proposed = await synthesizeFindings({
@@ -98,11 +119,11 @@ export async function runResearch(writeup, opts = {}) {
   };
 
   // ASSEMBLE + VALIDATE the §4 contract.
-  return finalize(scoped, grounded.findings, grounded.citations, trace, budgets);
+  return finalize(scoped, grounded.findings, grounded.citations, trace, budgets, quarantinedSources);
 }
 
 /** Build, sort, flag-if-insufficient, and validate the §4 contract doc. */
-function finalize(scoped, keptFindings, keptCitations, trace, budgets) {
+function finalize(scoped, keptFindings, keptCitations, trace, budgets, quarantinedSources = 0) {
   const insufficient = keptFindings.length < budgets.minGroundedFindings;
   const findings = [...keptFindings].sort((a, b) => b.importance - a.importance);
   const doc = {
@@ -111,6 +132,7 @@ function finalize(scoped, keptFindings, keptCitations, trace, budgets) {
     findings,
     citations: keptCitations.map(toContractCitation),
     ...(insufficient ? { insufficient_sources: true } : {}),
+    ...(quarantinedSources > 0 ? { quarantined_sources: quarantinedSources } : {}),
   };
   const validation = validateFindingsDoc(doc);
   return { doc, validation, trace };

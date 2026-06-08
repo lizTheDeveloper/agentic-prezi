@@ -13,6 +13,7 @@
 import { readFileSync } from 'node:fs';
 import { runResearch } from './pipeline.mjs';
 import { makeNousLlm, DEFAULT_MODEL } from './providers/nous.mjs';
+import { makeLocalScorer } from './scan.mjs';
 
 function parseArgs(argv) {
   const opts = { budgets: {}, cache: {} };
@@ -47,10 +48,16 @@ async function main() {
   }
   console.error(`→ scope + synthesis via ${process.env.NOUS_RESEARCH_MODEL || DEFAULT_MODEL} (Nous Portal)`);
 
+  // §7.1 active injection scan runs only when a self-hosted Prompt Guard 2 scorer is reachable
+  // (PROMPT_GUARD_URL); otherwise research proceeds on the layer-1 structural defenses alone.
+  const scorer = makeLocalScorer();
+  if (scorer) console.error('🛡 prompt-injection scan: enabled (PROMPT_GUARD_URL)');
+
   const { doc, validation, trace } = await runResearch(writeup, {
     llm,
     budgets: opts.budgets,
     cache: opts.cache,
+    scan: scorer ? { scorer } : {},
   });
 
   if (opts.showTrace) console.error(JSON.stringify(trace, null, 2));

@@ -9,9 +9,12 @@
 // lives in the external styles.css (font-src 'self'), NOT here.
 
 import { escapeXml, wrapToWidth, linesThatFit, insetBbox, LINE_HEIGHT } from './util.mjs';
+import { isSafeShapeSvg } from './shape-guard.mjs';
 
-// Cross-platform fallback stacks. Embedded self-hosted fonts (§7.1), when configured, are added
-// to styles.css and referenced by family name here; absent that, these resolve per-platform.
+// Cross-platform fallback stacks. Embedded self-hosted fonts (§7.1), when configured via
+// compileSvg(ir,{fonts}), override these family names so the SVG references the embedded faces that
+// styles.css declares with @font-face — guaranteeing sandbox↔viewer metric fidelity. Absent that,
+// these resolve per-platform (and the vision-loop fidelity guarantee is conditional, §7.1).
 const HEADING_FAMILY = "Georgia, 'Times New Roman', serif";
 const BODY_FAMILY = "system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif";
 
@@ -38,6 +41,8 @@ function fontSizesFor(inner) {
 // layout report (per-block fit, overflow) the critique consumes.
 function layoutScene(scene, opts) {
   const margin = opts.margin ?? 80;
+  const headingFamily = opts.headingFamily ?? HEADING_FAMILY;
+  const bodyFamily = opts.bodyFamily ?? BODY_FAMILY;
   const inner = insetBbox(scene.bbox, margin);
   const sizes = fontSizesFor(inner);
   const items = [];
@@ -51,7 +56,7 @@ function layoutScene(scene, opts) {
       const fontSize = block.type === 'heading' ? sizes.heading : sizes.body;
       const color = block.type === 'heading' ? THEME.heading : THEME.body;
       const weight = block.type === 'heading' ? 700 : 400;
-      const family = block.type === 'heading' ? HEADING_FAMILY : BODY_FAMILY;
+      const family = block.type === 'heading' ? headingFamily : bodyFamily;
       const lines = wrapToWidth(block.text, inner.w, fontSize);
       const availFromHere = inner.y + inner.h - cursorY;
       const fit = linesThatFit(availFromHere, fontSize);
@@ -88,14 +93,20 @@ function layoutScene(scene, opts) {
         .join('');
       // Link to the source when a safe http(s) URL exists (selectable, live citation links §7.1).
       const href = ref && /^https?:\/\//i.test(ref.url || '') ? ref.url : null;
-      const textEl = `<text font-family="${BODY_FAMILY}" font-size="${fontSize}" font-style="italic" fill="${THEME.citation}" xml:space="preserve">${tspans}</text>`;
+      const textEl = `<text font-family="${bodyFamily}" font-size="${fontSize}" font-style="italic" fill="${THEME.citation}" xml:space="preserve">${tspans}</text>`;
       svgParts.push(href ? `<a href="${escapeXml(href)}" target="_blank" rel="noopener noreferrer">${textEl}</a>` : textEl);
       advance(lines.length + 0.3, fontSize);
       items.push({ kind: 'citation', refId: block.refId, fontSize, lines: lines.length, fit, overflow });
     } else if (block.type === 'shape') {
-      // Trusted: shapes are emitted by Compose's own templates, not from untrusted prose.
-      svgParts.push(block.svg);
-      items.push({ kind: 'shape' });
+      // Trust boundary (§3/§9), defense-in-depth: validateIr already rejects unsafe shapes, but the
+      // compiler emits this fragment verbatim, so re-check the allowlist here and DROP on any doubt
+      // rather than ever writing un-vetted markup into presentation.svg.
+      if (isSafeShapeSvg(block.svg)) {
+        svgParts.push(block.svg);
+        items.push({ kind: 'shape' });
+      } else {
+        items.push({ kind: 'shape', dropped: true });
+      }
     } else if (block.type === 'image') {
       const w = inner.w;
       const h = inner.h - (cursorY - inner.y);
@@ -130,6 +141,9 @@ const r = (n) => Math.round(n);
 export function compileSvg(ir, opts = {}) {
   const citationsById = new Map((ir.citations || []).map((c) => [c.id, c]));
   const margin = opts.margin ?? 80;
+  // Embedded-font family overrides (§7.1): opts.fonts = { headingFamily, bodyFamily }.
+  const headingFamily = opts.fonts?.headingFamily;
+  const bodyFamily = opts.fonts?.bodyFamily;
   const { width, height } = ir.canvas;
 
   // Paint parents before children so nested detail layers on top (depth order = ancestor count).
@@ -140,7 +154,7 @@ export function compileSvg(ir, opts = {}) {
   const reports = [];
   const groups = [];
   for (const scene of ordered) {
-    const { svgParts, report } = layoutScene(scene, { margin, citationsById });
+    const { svgParts, report } = layoutScene(scene, { margin, citationsById, headingFamily, bodyFamily });
     reports.push(report);
     const b = scene.bbox;
     const tint = Math.min(0.9, 0.5 + depthOf(scene) * 0.12);

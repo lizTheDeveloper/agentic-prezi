@@ -12,6 +12,7 @@ import { handleApp } from './app.ts';
 import { handlePublished } from './published.ts';
 import { Worker } from './worker.ts';
 import type { WorkerOptions } from './worker.ts';
+import { selectGenerator } from './worker.ts';
 
 // Wires the pieces together and dispatches by Host header: app origin vs <slug> origin.
 // Exported as a factory so tests can boot a real server on an ephemeral port with injected deps.
@@ -30,7 +31,11 @@ export function createApp(opts: { config?: Config; email?: EmailSender; worker?:
   const queue = new JobQueue(db);
   const email = opts.email ?? new ConsoleEmailSender();
   const ctx: Ctx = { db, config, queue, email };
-  const worker = new Worker(ctx, opts.worker);
+  // Pick the generator: the full #2→#3→#1 prezi pipeline when an LLM is configured, else the #1
+  // stub (so dev/offline still works). An explicitly-injected generator always wins (tests).
+  const workerOpts: WorkerOptions = { ...(opts.worker ?? {}) };
+  if (!workerOpts.generator) workerOpts.generator = selectGenerator();
+  const worker = new Worker(ctx, workerOpts);
 
   const server = createServer((req, res) => {
     const hostname = getHostname(req);

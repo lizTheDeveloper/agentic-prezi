@@ -11,6 +11,7 @@ export const DEFAULT_BUDGETS = Object.freeze({
   minGroundedFindings: 3,  // §6 graceful-insufficiency floor
   wallClockMs: 120_000,    // overall wall-clock ceiling
   tokenBudget: 60_000,     // LLM token ceiling (advisory; enforced by caller)
+  injectionThreshold: 0.5, // §7.1 SCAN: conservative P(malicious) cutoff (quarantine on doubt)
 });
 
 /** Merge user overrides onto the defaults, ignoring unknown keys. */
