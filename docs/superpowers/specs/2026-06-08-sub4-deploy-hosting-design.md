@@ -111,11 +111,23 @@ What #4 owns instead: once the engine is **proven** and we build the production 
 
 ---
 
-## 10. Monitoring & ops (MVP-light)
+## 10. Monitoring & ops
 
 - Container **healthchecks** + `restart: unless-stopped`; compose logs shipped to disk with rotation.
-- A simple external **uptime check** on the app origin; job-failure surfaced in the #1 dashboard (`status=failed`).
+- Job-failure surfaced in the #1 dashboard (`status=failed`).
 - Resource alerts (disk/mem) — keep minimal; expand later.
+
+### 10.1 Error tracking & uptime — self-hosted GlitchTip
+
+**GlitchTip** (open-source, **self-hostable**, **Sentry-SDK/API compatible**) is the platform's error-tracking + uptime + log/perf monitor. It tracks exceptions, log messages, CSP-violation reports, slow requests, and pings the app for uptime.
+
+- **Self-hosted on the Hetzner box** as a `docker compose` service (with its own backing datastore — Postgres/Redis per its compose; confirm versions + pin images at deploy). On-box ⇒ **no third-party SaaS, no error-data egress** off the box — consistent with the project's stance.
+- **Reporting WITHOUT the `@sentry/node` SDK:** the control plane + Hermes worker send events via a **tiny stdlib (`node:https`) POST** to GlitchTip's **Sentry-compatible event ingest** (the project DSN), rather than pulling the large `@sentry/*` npm dependency tree — honoring #0's minimal-dependency rule. A small `src/reporter.ts` wraps the top-level error handlers (the `app.ts` 500 path, `worker.ts` job failures, `server.ts` unhandled-rejection hook) and posts `{ exception, message, level, context }` to the DSN.
+- **DSN is config, not a secret in repo** — injected from the runtime secret store (#0 §B5 / §6). Internal traffic is box-local (or the GlitchTip ingest host is added to the §6 egress allowlist if split out).
+- **Scrubbing:** the reporter strips obvious sensitive fields before sending; since presentations are non-secret this is low-risk, but session cookies / tokens must never be attached to events.
+- Uptime: prefer GlitchTip's built-in uptime monitor over a separate external check.
+
+> Pin the GlitchTip image by digest and treat it like any dependency (review + pinned). Implemented as part of #4's compose stack; the `reporter.ts` client is small enough to land with #1/#4 wiring.
 
 ---
 
