@@ -95,11 +95,27 @@ export async function synthesizeFindings({ topic, writeup = '', citations, llm =
   // Light shape coercion only — real validation/grounding happens downstream.
   return findings
     .filter((f) => f && typeof f.claim === 'string' && Array.isArray(f.citations))
-    .map((f) => ({
-      claim: String(f.claim),
-      detail: typeof f.detail === 'string' && f.detail.trim() ? f.detail : f.claim,
-      importance: Number.isInteger(f.importance) ? Math.min(5, Math.max(1, f.importance)) : 3,
-      citations: f.citations.filter((id) => typeof id === 'string'),
-      ...(f.figure && typeof f.figure === 'object' ? { figure: f.figure } : {}),
-    }));
+    .map((f) => {
+      const figure = sanitizeFigure(f.figure);
+      return {
+        claim: String(f.claim),
+        detail: typeof f.detail === 'string' && f.detail.trim() ? f.detail : f.claim,
+        importance: Number.isInteger(f.importance) ? Math.min(5, Math.max(1, f.importance)) : 3,
+        citations: f.citations.filter((id) => typeof id === 'string'),
+        ...(figure ? { figure } : {}),
+      };
+    });
+}
+
+/**
+ * Coerce an LLM-proposed figure into the contract shape, or drop it. A figure needs a
+ * string caption or string data_or_quote (schema.mjs §4). A malformed figure must NOT
+ * fail the whole doc — drop it and keep the finding (graceful degradation, §7/§8).
+ */
+export function sanitizeFigure(figure) {
+  if (!figure || typeof figure !== 'object' || Array.isArray(figure)) return null;
+  const caption = typeof figure.caption === 'string' && figure.caption.trim() ? figure.caption : undefined;
+  const dataOrQuote = typeof figure.data_or_quote === 'string' && figure.data_or_quote.trim() ? figure.data_or_quote : undefined;
+  if (caption === undefined && dataOrQuote === undefined) return null;
+  return { ...(caption !== undefined ? { caption } : {}), ...(dataOrQuote !== undefined ? { data_or_quote: dataOrQuote } : {}) };
 }

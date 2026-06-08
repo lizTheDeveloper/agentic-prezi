@@ -20,6 +20,7 @@
 | `src/research/adapters/openalex.mjs` | OpenAlex adapter — discovery + metadata, abstract inverted-index reconstruction. Pure `parseWorks`. |
 | `src/research/adapters/crossref.mjs` | Crossref adapter — DOI metadata, JATS abstract strip. Pure `parseItems`. |
 | `src/research/adapters/arxiv.mjs` | arXiv adapter — Atom feed, dependency-free XML extraction. Pure `parseAtom`. |
+| `src/research/adapters/pubmed.mjs` | PubMed adapter — NCBI E-utilities (esearch→esummary), keyless (optional `PUBMED_API_KEY`). Pure `parseSummary`/`parseSearchIds`. |
 | `src/research/cache.mjs` | Adapter-response cache under `.cache/research/` (git-ignored), recency-aware TTL. Pure key/TTL logic. |
 | `src/research/budgets.mjs` | Default caps (§6): sub-queries, per-query, top-K, cross-checks, grounded-floor, wall-clock, tokens. |
 | `src/research/scope.mjs` | SCOPE: write-up → topic + sub-queries (+ outline). LLM-backed; deterministic keyword heuristic fallback. |
@@ -59,12 +60,18 @@ Verified end-to-end: an LLM that fabricates citation ids cannot poison the doc (
 
 ## Status & remaining work
 
-**Done & verified:** full pipeline runs offline (deterministic) and against **live** OpenAlex/Crossref/arXiv, emitting a valid, fully-grounded, DOI-resolved `#3 §4` document. `npm test` → 86 pass. Secret scan clean. Zero new dependencies.
+**Done & verified:** full pipeline runs offline (deterministic) and against **live** OpenAlex/Crossref/arXiv/PubMed, emitting a valid, fully-grounded, DOI-resolved `#3 §4` document. `npm test` → 95 pass. Secret scan clean. Zero new dependencies.
 
-**Deferred (provider-gated):**
-- **LLM scope + synthesis quality** — the deterministic fallback de-risks the pipeline but produces naive findings (keyword breadth, no topical synthesis). Real quality needs the **Nous Portal subscription decision** (CLAUDE.md open item). Wire a `makeJsonLlm(complete)` impl into `runResearch({ llm })`.
-- **Hermes web search + cloud-browser extraction** adapter (§2/§8 enrichment path) — added once the provider/spike lands; the EXTRACT stage is currently satisfied by adapter abstracts.
-- **PubMed adapter** (§10.4) — optional, add if biomedical volume warrants.
+**Resolved in review follow-up (PR #1):**
+- **PubMed adapter** landed (§2/§10.4) — biomedical coverage, keyless E-utilities, in `DEFAULT_ADAPTERS`.
+- **Budget enforcement** (§6) — `maxCrossChecks` caps resolvability checks in `ground.mjs`; `wallClockMs` deadline in `pipeline.mjs` returns a clean partial `insufficient_sources` doc on timeout.
+- **Graceful figure handling** (§7/§8) — a malformed LLM `figure` is now dropped (`sanitizeFigure`) instead of failing the whole doc.
+- **HTTP hardening** (§7) — redirect hop cap, response-size cap, HEAD-based resolvability (no PDF download), opt-in `RESEARCH_EGRESS_ALLOWLIST` SSRF seam.
+
+**Deferred (provider-gated / later):**
+- **LLM scope + synthesis quality** — the deterministic fallback de-risks the pipeline but produces naive findings (keyword breadth, no topical synthesis). Nous Portal is now **confirmed**; next step is wiring a `makeJsonLlm(complete)` impl into `runResearch({ llm })`.
+- **Hermes web search + cloud-browser extraction** adapter (§2/§8 enrichment path) — extraction-shaped (not `search`/`fetchMeta`); track with the engine work.
 - **Per-presentation research cache** (§5) — belongs at the #1 job/worker seam; the adapter-response cache is in place.
 - **Tuning** (§10.1/§10.2): ranking weights and budget numbers — defaults are sensible starting points.
-- **Egress allowlist entries** — to be registered in the #4 deploy config.
+- **Egress allowlist entries** — infra-level enforcement registered in the #4 deploy config (the app-layer `RESEARCH_EGRESS_ALLOWLIST` seam exists now).
+- **Source-lineage weighting** — OpenAlex ingests Crossref, so they aren't fully independent for the cross-check (known limitation, noted in `ground.mjs`).

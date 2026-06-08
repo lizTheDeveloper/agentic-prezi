@@ -37,14 +37,23 @@ export function citationKey(c) {
 
 const STOPWORDS = new Set(['the', 'a', 'an', 'of', 'and', 'in', 'on', 'for', 'to', 'de', 'la']);
 
+const INITIALS = /^[A-Z]{1,4}$/; // e.g. "JA", "G" — PubMed-style trailing initials
+
 function firstAuthorSurname(authors) {
   const a = Array.isArray(authors) && authors.length ? authors[0] : '';
   if (!a) return 'anon';
-  // "Family, Given" → surname is before the comma; "Given Family" → surname is the last token.
+  // "Family, Given" → surname is before the comma.
   const beforeComma = a.includes(',') ? a.split(',')[0] : a;
   const tokens = beforeComma.split(/\s+/).filter((t) => t && !STOPWORDS.has(t.toLowerCase()));
-  const surname = a.includes(',') ? (tokens[0] || 'anon') : (tokens[tokens.length - 1] || 'anon');
-  return surname.toLowerCase().replace(/[^a-z]/g, '') || 'anon';
+  let surname;
+  if (a.includes(',')) {
+    surname = tokens[0]; // "Smith, Jane"
+  } else if (tokens.length > 1 && INITIALS.test(tokens[tokens.length - 1].replace(/\./g, ''))) {
+    surname = tokens[0]; // "Mensah GA" (PubMed: Family Initials) → first token
+  } else {
+    surname = tokens[tokens.length - 1]; // "Jane Smith" (Given Family) → last token
+  }
+  return (surname || 'anon').toLowerCase().replace(/[^a-z]/g, '') || 'anon';
 }
 
 /**

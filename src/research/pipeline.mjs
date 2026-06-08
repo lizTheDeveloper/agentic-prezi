@@ -15,9 +15,10 @@ import { isResolvable } from './http.mjs';
 import openalex from './adapters/openalex.mjs';
 import crossref from './adapters/crossref.mjs';
 import arxiv from './adapters/arxiv.mjs';
+import pubmed from './adapters/pubmed.mjs';
 
-/** The insulated, key-free scholarly adapters (§2/§8). */
-export const DEFAULT_ADAPTERS = [openalex, crossref, arxiv];
+/** The insulated, key-free scholarly adapters (§2/§8). PubMed adds biomedical coverage. */
+export const DEFAULT_ADAPTERS = [openalex, crossref, arxiv, pubmed];
 
 /**
  * Run the research pipeline.
@@ -41,10 +42,18 @@ export async function runResearch(writeup, opts = {}) {
   } = opts;
   const budgets = resolveBudgets(opts.budgets);
   const trace = { stages: {} };
+  const deadline = Date.now() + budgets.wallClockMs;
+  const outOfTime = () => Date.now() > deadline;
 
   // SCOPE
   const scoped = await scopeStage(writeup, { llm, maxSubQueries: budgets.maxSubQueries });
   trace.stages.scope = { topic: scoped.topic, subQueries: scoped.sub_queries.length };
+
+  // Assemble a partial, contract-valid doc when the wall-clock budget (§6) is blown.
+  const timedOut = () => {
+    trace.timedOut = true;
+    return finalize(scoped, [], [], trace, budgets);
+  };
 
   // DISCOVER
   const { candidates, errors } = await discover(scoped.sub_queries, adapters, {
@@ -52,6 +61,7 @@ export async function runResearch(writeup, opts = {}) {
     cache,
   });
   trace.stages.discover = { candidates: candidates.length, adapterErrors: errors };
+  if (outOfTime()) return timedOut();
 
   // RANK / FILTER
   const ranked = rankAndCap(candidates, { topK: budgets.topK, nowYear });
@@ -72,9 +82,12 @@ export async function runResearch(writeup, opts = {}) {
     llm,
   });
   trace.stages.synthesize = { proposedFindings: proposed.length };
+  if (outOfTime()) return timedOut(); // VERIFY does live network checks — guard before it
 
   // VERIFY ⚑ — strict grounding: provenance → resolvability → grounding → cross-check
-  const grounded = await groundFindings(proposed, enrichedCitations, resolver, {});
+  const grounded = await groundFindings(proposed, enrichedCitations, resolver, {
+    maxCrossChecks: budgets.maxCrossChecks,
+  });
   trace.stages.verify = {
     keptFindings: grounded.findings.length,
     droppedFindings: grounded.dropped.findings.length,
@@ -82,18 +95,21 @@ export async function runResearch(writeup, opts = {}) {
     rejectedCitationIds: grounded.rejectedIds,
   };
 
-  // ASSEMBLE the §4 contract.
-  const insufficient = grounded.findings.length < budgets.minGroundedFindings;
-  const findings = [...grounded.findings].sort((a, b) => b.importance - a.importance);
+  // ASSEMBLE + VALIDATE the §4 contract.
+  return finalize(scoped, grounded.findings, grounded.citations, trace, budgets);
+}
+
+/** Build, sort, flag-if-insufficient, and validate the §4 contract doc. */
+function finalize(scoped, keptFindings, keptCitations, trace, budgets) {
+  const insufficient = keptFindings.length < budgets.minGroundedFindings;
+  const findings = [...keptFindings].sort((a, b) => b.importance - a.importance);
   const doc = {
     topic: scoped.topic,
     narrative_outline: scoped.narrative_outline,
     findings,
-    citations: grounded.citations.map(toContractCitation),
+    citations: keptCitations.map(toContractCitation),
     ...(insufficient ? { insufficient_sources: true } : {}),
   };
-
-  // VALIDATE against the contract before handing to #3.
   const validation = validateFindingsDoc(doc);
   return { doc, validation, trace };
 }

@@ -57,6 +57,11 @@ export async function filterResolvable(citations, resolver) {
 /**
  * Count independent sources backing a finding, via its citations' `sources` arrays.
  * Used for the adversarial cross-check.
+ *
+ * Known limitation: sources are treated as fully independent, but OpenAlex ingests
+ * Crossref metadata, so an OpenAlex+Crossref pair shares an upstream and isn't truly
+ * two independent confirmations. Genuine independence comes from a *different citation*
+ * (distinct DOI) corroborating the claim. Refine when source-lineage weighting lands.
  */
 export function independentSourceCount(finding, citationsById) {
   const sources = new Set();
@@ -79,16 +84,18 @@ export function independentSourceCount(finding, citationsById) {
  * @returns {{ findings, citations, dropped: {findings, citations}, rejectedIds }}
  */
 export async function groundFindings(findings, citations, resolver, opts = {}) {
-  const { minSourcesForHighImportance, highImportanceThreshold } = { ...DEFAULT_GROUNDING, ...opts };
+  const { minSourcesForHighImportance, highImportanceThreshold, maxCrossChecks = Infinity } = { ...DEFAULT_GROUNDING, ...opts };
 
   // 1. Provenance.
   const declaredIds = new Set(citations.map((c) => c.id));
   const { findings: provFindings, rejectedIds } = enforceProvenance(findings, declaredIds);
 
-  // 2. Resolvability — only check citations actually referenced by surviving findings.
+  // 2. Resolvability — only check citations actually referenced by surviving findings,
+  // capped to `maxCrossChecks` (§6 budget). `citations` arrives in ranked order, so the
+  // cap keeps the top-ranked referenced citations; the rest go unchecked (→ unresolved).
   const referenced = new Set();
   for (const f of provFindings) for (const id of f.citations) referenced.add(id);
-  const referencedCitations = citations.filter((c) => referenced.has(c.id));
+  const referencedCitations = citations.filter((c) => referenced.has(c.id)).slice(0, maxCrossChecks);
   const { resolved, dropped: droppedCitations } = await filterResolvable(referencedCitations, resolver);
   const resolvedIds = new Set(resolved.map((c) => c.id));
   const citationsById = new Map(resolved.map((c) => [c.id, c]));

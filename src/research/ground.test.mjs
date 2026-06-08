@@ -64,6 +64,20 @@ test('groundFindings keeps a high-importance claim with two independent sources'
   assert.equal(g.findings[0].importance, 5);
 });
 
+test('groundFindings caps resolvability checks at maxCrossChecks (§6 budget)', async () => {
+  let checks = 0;
+  const counting = async () => { checks++; return true; };
+  const findings = [
+    { claim: 'one', detail: 'd', importance: 2, citations: ['a'] },
+    { claim: 'two', detail: 'd', importance: 2, citations: ['b'] },
+    { claim: 'three', detail: 'd', importance: 2, citations: ['c'] },
+  ];
+  const g = await groundFindings(findings, cites, counting, { maxCrossChecks: 2 });
+  assert.equal(checks, 2); // only the top-2 referenced citations are checked
+  // the finding whose only citation ('c') was never checked is dropped
+  assert.ok(!g.findings.some((f) => f.claim === 'three'));
+});
+
 test('groundFindings only emits citations still referenced by kept findings', async () => {
   const findings = [{ claim: 'x', detail: 'd', importance: 2, citations: ['a'] }];
   const g = await groundFindings(findings, cites, alwaysResolve);

@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
-  prepareCitations, toContractCitation, deterministicFindings, synthesizeFindings,
+  prepareCitations, toContractCitation, deterministicFindings, synthesizeFindings, sanitizeFigure,
 } from './synthesize.mjs';
 
 const ranked = [
@@ -63,6 +63,27 @@ test('synthesizeFindings coerces and clamps llm output', async () => {
   assert.equal(findings.length, 1);
   assert.equal(findings[0].importance, 5);
   assert.deepEqual(findings[0].citations, ['smith2025']);
+});
+
+test('sanitizeFigure keeps a valid figure and drops malformed ones', () => {
+  assert.deepEqual(sanitizeFigure({ caption: 'A chart', data_or_quote: '42%' }), { caption: 'A chart', data_or_quote: '42%' });
+  assert.deepEqual(sanitizeFigure({ caption: 'only caption' }), { caption: 'only caption' });
+  assert.equal(sanitizeFigure({}), null);
+  assert.equal(sanitizeFigure([]), null);
+  assert.equal(sanitizeFigure({ caption: 123 }), null);
+  assert.equal(sanitizeFigure(null), null);
+});
+
+test('synthesizeFindings drops a malformed figure but keeps the finding (graceful, §7/§8)', async () => {
+  const { citations } = prepareCitations(ranked);
+  const llm = { json: async () => ({ findings: [
+    { claim: 'C', detail: 'D', importance: 3, citations: ['smith2025'], figure: {} },        // bad → dropped
+    { claim: 'E', detail: 'F', importance: 2, citations: ['doe2024'], figure: { caption: 'ok' } }, // good → kept
+  ] }) };
+  const findings = await synthesizeFindings({ topic: 'T', citations, llm });
+  assert.equal(findings.length, 2);
+  assert.equal(findings[0].figure, undefined);
+  assert.deepEqual(findings[1].figure, { caption: 'ok' });
 });
 
 test('synthesizeFindings recovers from a throwing llm', async () => {

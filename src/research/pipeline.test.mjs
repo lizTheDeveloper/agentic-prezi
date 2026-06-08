@@ -86,6 +86,26 @@ test('end-to-end: an llm that fabricates a citation id cannot poison the doc (โ
   assert.ok(!doc.findings.some((f) => f.claim === 'All fake'));
 });
 
+test('wall-clock budget timeout returns a clean partial doc (ยง6)', async () => {
+  // A slow adapter blows a tiny wall-clock budget; the run must short-circuit cleanly.
+  const slow = { name: 'openalex', search: async () => {
+    await new Promise((r) => setTimeout(r, 30));
+    return richCorpus.map((w) => ({ ...w, source: 'openalex' }));
+  } };
+  const { doc, validation, trace } = await runResearch('CRISPR', {
+    adapters: [slow],
+    resolver: async () => true,
+    cache: cacheOff,
+    nowYear: NOW_YEAR,
+    budgets: { wallClockMs: 1 }, // already blown by the time discover returns
+  });
+  assert.equal(validation.valid, true, validation.errors.join('; '));
+  assert.equal(trace.timedOut, true);
+  assert.equal(doc.insufficient_sources, true);
+  assert.equal(doc.findings.length, 0);
+  assert.ok(doc.topic); // topic/outline still present
+});
+
 test('runResearch output always satisfies the contract validator', async () => {
   const adapters = [corpusAdapter('openalex', richCorpus)];
   const { doc } = await runResearch('CRISPR delivery vectors', {

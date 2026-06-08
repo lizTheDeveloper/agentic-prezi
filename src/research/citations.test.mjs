@@ -35,6 +35,13 @@ test('makeCitationId handles "Family, Given" and missing data', () => {
   assert.equal(makeCitationId({ authors: [], year: null }), 'anonnd');
 });
 
+test('makeCitationId handles PubMed-style "Family Initials" order', () => {
+  assert.equal(makeCitationId({ authors: ['Mensah GA'], year: 2026 }), 'mensah2026');
+  assert.equal(makeCitationId({ authors: ['Smith J'], year: 2025 }), 'smith2025');
+  // a real two-word "Given Family" name still uses the last token
+  assert.equal(makeCitationId({ authors: ['Cheng Chang'], year: 2025 }), 'chang2025');
+});
+
 test('dedupCandidates merges by DOI and unions sources', () => {
   const merged = dedupCandidates([
     { title: 'Paper A', doi: '10.1/x', authors: ['A'], year: 2024, source: 'openalex', citedByCount: 5 },

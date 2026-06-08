@@ -6,6 +6,8 @@ import { parseAtom } from './arxiv.mjs';
 import openalex from './openalex.mjs';
 import crossref from './crossref.mjs';
 import arxiv from './arxiv.mjs';
+import pubmed from './pubmed.mjs';
+import { parseSummary, parseSearchIds } from './pubmed.mjs';
 
 // ---- OpenAlex ----
 test('openalex reconstructAbstract rebuilds text from inverted index', () => {
@@ -92,6 +94,61 @@ test('arxiv parseAtom extracts entries and decodes entities', () => {
 test('arxiv parseAtom returns [] for empty feed', () => {
   assert.deepEqual(parseAtom('<feed></feed>'), []);
   assert.deepEqual(parseAtom(''), []);
+});
+
+// ---- PubMed ----
+test('pubmed parseSummary normalizes records and extracts DOI', () => {
+  const json = { result: {
+    uids: ['111', '222'],
+    111: {
+      uid: '111', title: 'A Biomedical Study', pubdate: '2025 Jan',
+      fulljournalname: 'The Lancet', authors: [{ name: 'Smith J' }, { name: 'Doe A' }],
+      articleids: [{ idtype: 'pubmed', value: '111' }, { idtype: 'doi', value: '10.1016/bio' }],
+    },
+    222: {
+      uid: '222', title: 'Another Study', pubdate: '2024 Dec',
+      source: 'BMJ', authors: [{ name: 'Lee K' }], elocationid: 'doi: 10.1136/abc',
+    },
+  } };
+  const [a, b] = parseSummary(json);
+  assert.equal(a.title, 'A Biomedical Study');
+  assert.deepEqual(a.authors, ['Smith J', 'Doe A']);
+  assert.equal(a.year, 2025);
+  assert.equal(a.venue, 'The Lancet');
+  assert.equal(a.doi, '10.1016/bio');
+  assert.equal(a.url, 'https://pubmed.ncbi.nlm.nih.gov/111/');
+  assert.equal(a.source, 'pubmed');
+  assert.equal(b.doi, '10.1136/abc'); // parsed from elocationid
+  assert.equal(b.venue, 'BMJ');
+});
+
+test('pubmed parseSummary/parseSearchIds tolerate empty payloads', () => {
+  assert.deepEqual(parseSummary({}), []);
+  assert.deepEqual(parseSearchIds({}), []);
+  assert.deepEqual(parseSearchIds({ esearchresult: { idlist: ['1', '2'] } }), ['1', '2']);
+});
+
+test('pubmed.search does esearch then esummary via injected fetcher', async () => {
+  const urls = [];
+  const out = await pubmed.search('cancer', {
+    perQuery: 2,
+    fetchJsonImpl: async (url) => {
+      urls.push(url);
+      if (url.includes('esearch')) return { esearchresult: { idlist: ['9'] } };
+      return { result: { uids: ['9'], 9: { uid: '9', title: 'T', pubdate: '2025' } } };
+    },
+  });
+  assert.equal(out.length, 1);
+  assert.equal(out[0].title, 'T');
+  assert.ok(urls[0].includes('esearch.fcgi'));
+  assert.ok(urls[1].includes('esummary.fcgi'));
+});
+
+test('pubmed.search short-circuits when esearch returns no ids', async () => {
+  let calls = 0;
+  const out = await pubmed.search('nothing', { fetchJsonImpl: async () => { calls++; return { esearchresult: { idlist: [] } }; } });
+  assert.deepEqual(out, []);
+  assert.equal(calls, 1); // no esummary call
 });
 
 // ---- search() wiring uses injected fetch (no network) ----
