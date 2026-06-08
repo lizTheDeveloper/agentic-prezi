@@ -52,6 +52,8 @@ write-up
                  relevance; cap to top-K candidates
   → EXTRACT      scholarly APIs give structured abstract/metadata; Hermes cloud browser
                  extracts claims/figures from full text/PDF where needed
+  → SCAN 🛡       prompt-injection scan (Llama Prompt Guard 2, §7.1) of EVERY ingested
+                 free-text field BEFORE it can reach any LLM; quarantine MALICIOUS chunks
   → VERIFY ⚑     STRICT grounding (see §4) — resolve citations, cross-check key claims, drop ungrounded
   → SYNTHESIZE   cluster surviving findings → narrative_outline, rank by importance,
                  attach citation ids → emit §1 contract; validate against JSON Schema
@@ -95,7 +97,19 @@ Research is multiplicative (sub-queries × adapters × candidates × verificatio
 - Runs in the **orchestration layer**, not the code sandbox — no `execute_code` needed here.
 - Egress: Nous Portal + the scholarly API hosts only (added to #0 §B3 allowlist).
 - Any optional API keys (PubMed) live in the **runtime secret store** (#0 §B5), never in repo/images.
-- Extracted third-party text is treated as untrusted data (it can carry prompt-injection); the synthesis prompt is structured so retrieved content is **data, not instructions**, and outputs are schema-validated.
+- Extracted third-party text is treated as untrusted data (it can carry prompt-injection); the synthesis prompt is structured so retrieved content is **data, not instructions**, and outputs are schema-validated. **This is layer 1; the active classifier scan in §7.1 is layer 2.**
+
+### 7.1 Prompt-injection scanning of ingested content 🛡 (Llama Prompt Guard 2)
+
+**Everything the research engine brings in from the outside world is untrusted** — paper titles/abstracts, extracted full-text/PDF body, figure captions, quotes, web snippets — and can carry prompt-injection / jailbreak payloads aimed at the downstream LLM (SCOPE/SYNTHESIZE) or at #3's generation. On top of the structural "content-as-data" defense above, we add an **active classifier scan**.
+
+- **Model:** **Llama Prompt Guard 2 — 22M** (`meta-llama/Llama-Prompt-Guard-2-22M`). DeBERTa-xsmall, 22M params; binary **`BENIGN`/`MALICIOUS`** + logit; ≤512 tokens; CPU-friendly. Meta ships it expressly to scan untrusted third-party content in LLM pipelines as an added defense layer.
+- **What gets scanned:** **every ingested free-text field, before it can enter any prompt or be forwarded to #3** — title, abstract, extracted body, captions, quotes, web text. Long text is chunked into ≤512-token windows; if **any** window scores `MALICIOUS` past the threshold, the whole chunk/source is quarantined.
+- **On detection (fail-safe):** the offending text is **quarantined — never placed in an LLM prompt, never forwarded to #3**. The source may still contribute *structured* citation metadata (DOI/authors/year) if independently resolvable, but its free text is excluded; a finding that thereby loses textual support is downgraded/dropped by grounding (§4). The result records a `quarantined_sources` count + reasons (mirrors §6's transparency).
+- **Threshold:** Prompt Guard 2 publishes no fixed cutoff, so we use a **conservative, configurable logit threshold** (quarantine on doubt — presentations are non-secret, so a false positive costs one source, never correctness). Tunable via `budgets`/config.
+- **Defense-in-depth, not sole defense:** layer 2. Layer 1 (content-as-data, schema-validated output, cite-only-from-set provenance §4) stays in force — important because legitimate scientific text *about* prompt injection can trip the classifier; quarantining it is acceptable since the structural defenses still hold.
+- **Where it runs — no new egress of research content:** self-hosted as a small local scorer in the **agent/worker plane** (Python, where Hermes already runs), on an internal/localhost endpoint the Node orchestrator calls per chunk. **Research content is never sent to a third party for scanning.** Runtime options + tradeoffs in §10.
+- **Supply chain (the model is itself an artifact):** pin the **exact HF revision (commit hash)** and **verify the weight checksum**; weights download (gated **Llama 4 Community License** — terms must be accepted) happens **at build time only** (#4), with `huggingface.co` added to the #0 §B3 egress allowlist for that step. The Python inference deps (transformers/torch-CPU, or an ONNX runtime) are pinned + vetted and live **only in the agent-plane image**, never the Node control plane.
 
 ---
 
@@ -113,6 +127,7 @@ Research is multiplicative (sub-queries × adapters × candidates × verificatio
 - **Resolvability:** dead DOI/URL → citation removed (mocked).
 - **Synthesis:** output conforms to the #3 §4 JSON Schema; importance ordering sane.
 - **End-to-end (fixture topic):** produces a valid, fully-grounded findings doc; the `insufficient_sources` path returns cleanly.
+- **Injection scan 🛡:** a fixture chunk containing a known injection string (e.g. "ignore previous instructions …") must score `MALICIOUS` → quarantined (excluded from every prompt + not forwarded to #3); a benign abstract passes. The scorer is injected/mockable so pipeline rules unit-test offline.
 
 ---
 
@@ -124,3 +139,5 @@ Research is multiplicative (sub-queries × adapters × candidates × verificatio
 4. **PubMed API key** — optional; decide if biomedical volume warrants it.
 5. **PDF figure/data extraction** depth — how much beyond abstracts to pull (cost vs. richness).
 6. Depends on the **Milestone-zero spike** for the Hermes-extraction path (§8 fallback covers the rest).
+7. **Prompt Guard 2 inference runtime** (§7.1) — choose: (a) **recommended** — a small Python scorer in the agent plane (matches the Hermes/Python plane; adds transformers/torch-CPU to that image, pinned+vetted); (b) ONNX export + `onnxruntime` in Node (in-process, no Python sidecar, but a native npm dep — tension with `ignore-scripts`); (c) HF-hosted Inference API (simplest, but egresses research content to HF — disfavored). Decide in #4 with the worker image. Also: accept the **Llama 4 Community License** and pin the model **revision + checksum**.
+8. **NOT YET IMPLEMENTED** — the merged #2 engine has the structural layer-1 defense (§7) but the §7.1 active scan is a **pending enhancement** to build (tracked in CLAUDE.md handoff).
