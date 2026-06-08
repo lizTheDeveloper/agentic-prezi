@@ -23,6 +23,7 @@ import { makeJsonLlm } from '../llm.mjs';
 export const DEFAULT_BASE_URL = 'https://inference-api.nousresearch.com/v1';
 export const DEFAULT_MODEL = 'anthropic/claude-opus-4.8';
 const RETRY_STATUS = new Set([429, 500, 502, 503, 504, 529]);
+const MAX_RESPONSE_BYTES = 8 * 1024 * 1024; // 8 MiB — anti-OOM cap on hostile/huge bodies
 
 /**
  * Build the chat/completions request body. `system` and `user` map to distinct message
@@ -89,8 +90,20 @@ function postOnce({ baseUrl, apiKey, body, timeoutMs }) {
     }, (res) => {
       const { statusCode } = res;
       let raw = '';
+      let bytes = 0;
       res.setEncoding('utf8');
-      res.on('data', (c) => { raw += c; });
+      res.on('data', (c) => {
+        bytes += Buffer.byteLength(c);
+        if (bytes > MAX_RESPONSE_BYTES) {
+          // Destroy → fires the req 'error' handler below, which rejects the promise.
+          // Non-transient: retrying would just re-download an oversized body.
+          const err = new Error(`nous: response exceeded ${MAX_RESPONSE_BYTES} bytes`);
+          err.transient = false;
+          req.destroy(err);
+          return;
+        }
+        raw += c;
+      });
       res.on('end', () => {
         if (statusCode !== 200) {
           // Truncate the body so an HTML/error page doesn't flood logs (no secrets echoed).
