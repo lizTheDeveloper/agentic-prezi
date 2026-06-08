@@ -14,7 +14,7 @@
 The walking skeleton: a user signs in (magic link), writes a presentation (a title + write-up), hits **Publish**, and gets a live `https://<slug>.themultiverse.school` URL. This sub-project delivers the full request→publish loop **end-to-end** using a **stub generator** in place of the real research/generation engine, so the platform is demonstrable before #2/#3 exist and independent of the Hermes drivability spike.
 
 ### In scope
-Backend HTTP/API, `node:sqlite` data layer, magic-link auth + sessions, React SPA (dashboard + editor), the publish pipeline + stub generator, slug minting, and Host-based subdomain serving of published static assets.
+Backend HTTP/API, `node:sqlite` data layer, magic-link auth + sessions, vanilla-JS SPA (dashboard + editor), the publish pipeline + stub generator, slug minting, and Host-based subdomain serving of published static assets.
 
 ### Out of scope (named, deferred)
 - Real research + Prezi generation → **#2 / #3** (a stub generator stands in).
@@ -30,7 +30,7 @@ Backend HTTP/API, `node:sqlite` data layer, magic-link auth + sessions, React SP
   browser  ───────► │  Node/TS server  (node:http, hand-rolled router)│
                     │                                                 │
    Host: app.*      │   ├─ JSON API            /api/*                 │
-   ──────────────►  │   ├─ React SPA (static, built by esbuild)       │
+   ──────────────►  │   ├─ vanilla-JS SPA (static, no build step)     │
                     │   │                                             │
    Host: <slug>.*   │   └─ Published-presentation static server       │
    ──────────────►  │       (read-only, no cookies, strict CSP)       │
@@ -46,7 +46,7 @@ Backend HTTP/API, `node:sqlite` data layer, magic-link auth + sessions, React SP
 ```
 
 - **Backend:** Node + TypeScript, **`node:http`** with a small hand-rolled router. Stdlib-first (`node:sqlite`, `node:crypto`, `node:https`) per #0. No web framework unless hand-rolling becomes painful, in which case one vetted micro-framework is added through the #0 gate.
-- **Frontend:** **React SPA** (user's choice), bundled by **esbuild** (recommended — smallest toolchain surface; **the one frontend-toolchain item to confirm at review**). Served as static files from the app origin. The SPA talks to the backend purely via the JSON API.
+- **Frontend:** **vanilla-JS SPA** (decided 2026-06-08 — chosen over React/esbuild to keep the dependency surface at **zero**, aligning with #0's anti-supply-chain stance). Plain `public/*.js`/`.css`/`.html`, **no build step, no npm deps**. Served as static files from the app origin; talks to the backend purely via the JSON API.
 - **Two origins, by design (security):** the **app** (SPA + API, authenticated, cookies) is a different origin from **published presentations** (`<slug>.themultiverse.school`, static, no cookies, CSP-locked — see #0 §B4).
 
 ---
@@ -100,7 +100,7 @@ Backend HTTP/API, `node:sqlite` data layer, magic-link auth + sessions, React SP
 ## 6. Subdomain serving (logic here; DNS/TLS in #4)
 
 The server routes on the `Host` header:
-- `themultiverse.school` / `app.themultiverse.school` → React SPA + `/api/*` (cookies, auth).
+- `themultiverse.school` / `app.themultiverse.school` → vanilla-JS SPA + `/api/*` (cookies, auth).
 - `<slug>.themultiverse.school` → serve `data/presentations/<id>/*` as **static, read-only, no-cookie** assets with a strict CSP (`default-src 'self'`; no third-party `script-src`/`connect-src`; restrictive `frame-ancestors`) per #0 §B4. A slug→presentation lookup maps the subdomain to its artifact directory; unknown slug → 404.
 
 Wildcard DNS (`*.themultiverse.school`) and a wildcard TLS cert are provisioned in **#4**; this spec only defines the Host-dispatch behavior so it's testable locally (via `Host` header override).
@@ -131,16 +131,16 @@ All write endpoints validate input and enforce ownership.
 - Auth-request rate limiting + neutral responses (no account enumeration).
 - CSRF via custom-header requirement + SameSite.
 - Published assets on a **separate origin**, no credentials, strict CSP (#0 §B4).
-- React + esbuild + any frontend dep pass the **#0 7-day min-age gate**, pinned, `ignore-scripts`.
+- Frontend is **zero-dependency static vanilla JS** (no bundler) — no frontend supply-chain surface to gate.
 - Input validation/size limits on write-ups; output of the stub generator is escaped/sanitized before embedding in SVG.
 
 ---
 
 ## 9. Build phases (within #1)
 
-1. **1a — Backend skeleton:** `node:http` server + router, `node:sqlite` + migrations, health check, esbuild SPA build pipeline.
+1. **1a — Backend skeleton:** `node:http` server + router, `node:sqlite` + migrations, health check, static asset serving (no build step).
 2. **1b — Auth:** magic-link request/verify, sessions, middleware — **dev-mode email to console**.
-3. **1c — Presentations:** CRUD API + React dashboard & editor (textarea + Publish).
+3. **1c — Presentations:** CRUD API + vanilla-JS dashboard & editor (textarea + Publish).
 4. **1d — Publish loop:** job queue + worker + **stub generator** + slug minting + Host-based static serving (local, via Host override).
 5. **1e — Real email:** wire the transactional REST provider over `node:https` (provider chosen + vetted).
 
@@ -157,6 +157,6 @@ All write endpoints validate input and enforce ownership.
 
 ## 11. Open items
 
-1. **Bundler confirmation** — esbuild recommended (smallest surface); confirm at review vs. Vite/other.
+1. ~~Bundler confirmation~~ — **RESOLVED 2026-06-08: vanilla JS, no bundler, zero frontend deps** (chosen over React/esbuild; ratified at PR review).
 2. **Transactional email provider** — pick + vet one (Postmark/Resend/SES-class) for phase 1e; dev-mode console until then.
 3. **Job-queue schema** is defined here but **shared** with #2/#3 — keep the `jobs` contract stable; the stub generator's artifact/manifest contract is the seam #3 must honor.
