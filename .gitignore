@@ -1,0 +1,22 @@
+# Secrets — never commit (this repo is PUBLIC)
+.env
+.env.*
+*.pem
+*.key
+secrets/
+.hermes/
+
+# Dependencies / build
+node_modules/
+dist/
+build/
+*.log
+
+# Local agent/tooling config — not part of this project, may hold local settings
+.qwen/
+.claude/
+
+# OS / editor
+.DS_Store
+.idea/
+.vscode/
