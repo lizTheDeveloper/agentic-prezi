@@ -45,7 +45,7 @@ SVG presentation and publishes it to a `*.themultiverse.school` URL.
 **Next:** write the #1 implementation plan (`docs/superpowers/plans/`) from `docs/superpowers/specs/2026-06-08-sub1-core-app-auth-publish-design.md`, then build it (walking skeleton: `node:http` + `node:sqlite` + magic-link auth + React/esbuild SPA + stub generator → publish to a `<slug>.themultiverse.school` URL). #1 runs locally with **no Docker**.
 
 **Open decisions to make before/while building:**
-- **Nous Portal subscription** — UNDECIDED; gates #2/#3 (OpenRouter only gives models, not the Tool Gateway). Doesn't block #0/#1.
+- **Nous Portal subscription** — **CONFIRMED.** #2/#3 use the Tool Gateway (web search, cloud browser/vision, image-gen) + Nous Portal models; OpenRouter stays a secondary `--provider`. Run `hermes setup --portal` (interactive OAuth) when building the engine.
 - #1: confirm **esbuild** as the bundler; pick + vet a **transactional email provider** (dev-mode console first).
-- **Maintenance:** bump the `.npmrc` `before=` date ~weekly (conservative when stale).
+- **Maintenance:** the `.npmrc` `before=` date is static and safe-when-stale; bump it only when you actually need newer packages — **not on a schedule.**
 - Risk gate: the **Hermes drivability spike** (cheap, throwaway VM + plain Docker) before building #2/#3's engine-dependent parts.

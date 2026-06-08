@@ -45,7 +45,7 @@ Set a static, conservative cutoff in the project `.npmrc`:
 ```
 before=2026-06-01T00:00:00Z
 ```
-npm honors `before` (verified: `npm config get before` recognizes the key) and resolves the **entire dependency tree** to versions published on or before that date — so *any* `npm install` on the dev box, including a careless raw one, silently refuses anything newer. A **static** date (bumped periodically, e.g. weekly, by the operator) errs *conservative*: an older cutoff = more min-age = safer, so staleness costs freshness, never security. This is the layer that actually protects the developer's machine at resolution time, before any test or import runs.
+npm honors `before` (verified: `npm config get before` recognizes the key) and resolves the **entire dependency tree** to versions published on or before that date — so *any* `npm install` on the dev box, including a careless raw one, silently refuses anything newer. A **static** date (bumped only when the operator actually needs newer packages — **not on a schedule**) errs *conservative*: an older cutoff = more min-age = safer, so staleness costs freshness, never security. This is the layer that actually protects the developer's machine at resolution time, before any test or import runs.
 
 **Layer 2 — `add-dep.sh` rolling 7-day window (for intentional adds):**
 When deliberately adding/updating a dep, use a precise rolling cutoff of `now − 7 days` (tighter than the static `.npmrc` date):
