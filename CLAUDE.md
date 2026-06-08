@@ -40,9 +40,12 @@ SVG presentation and publishes it to a `*.themultiverse.school` URL.
 **Specs (all 6 written, in `docs/superpowers/specs/`):** vision, #0 security, #1 core-app, #2 research, #3 generator, #4 deploy.
 **Build order:** #0 → #1 → #4 → #2 → #3.
 
-**Done:** **#0 security/supply-chain is BUILT and merged to `main`** (the gate scripts above + `docs/security/*`; 15 tests; plan in `docs/superpowers/plans/2026-06-08-sub0-security-supply-chain.md`). After cloning, run `sh scripts/setup-dev.sh` once.
+**Done:**
+- **#0 security/supply-chain is BUILT and merged to `main`** (the gate scripts above + `docs/security/*`; 15 tests; plan in `docs/superpowers/plans/2026-06-08-sub0-security-supply-chain.md`). After cloning, run `sh scripts/setup-dev.sh` once.
+- **#1 core app + auth + publish is BUILT and merged** (PR #2): vanilla-JS SPA, magic-link auth (`node:crypto`), `node:sqlite`, SQLite job queue + worker + stub generator, Host-based `<slug>.themultiverse.school` serving with CSP-locked published origin; 44 tests; `npm start` (`node src/server.ts`). The #3 generator later replaces the stub at the `manifest.json` artifact seam in `src/generator.ts`.
+- **#2 research engine is BUILT** (`src/research/*`; full pipeline scope→discover→rank→synthesize→**grounding ⚑**→validate, emitting the `#3 §4` contract; OpenAlex/Crossref/arXiv/PubMed adapters; budget caps + HTTP hardening; 95 tests; verified against live APIs; plan in `docs/superpowers/plans/2026-06-08-sub2-research-engine.md`). Run with `npm run research -- "<write-up>"`. **Now that Nous Portal is CONFIRMED, the next step is wiring a real `llm` into `runResearch({ llm })`** (scope/synthesis quality) + the Hermes extraction adapter; until then it runs on scholarly sources with a deterministic synthesis fallback (§8 insulation).
 
-**Next:** write the #1 implementation plan (`docs/superpowers/plans/`) from `docs/superpowers/specs/2026-06-08-sub1-core-app-auth-publish-design.md`, then build it (walking skeleton: `node:http` + `node:sqlite` + magic-link auth + **vanilla-JS SPA (zero deps, no bundler)** + stub generator → publish to a `<slug>.themultiverse.school` URL). #1 runs locally with **no Docker**.
+**Next:** **#4 deploy/hosting** (Hetzner + Docker, wildcard TLS, gVisor sandbox) + the **Hermes drivability spike**; then wire a real `llm` into `runResearch({ llm })` and add the Hermes extraction adapter (Nous Portal now confirmed); then **#3 presentation generator**. Seam for #2→#1: `runResearch()` in `src/research/pipeline.mjs` feeds the generator that currently produces the #1 stub.
 
 **Open decisions to make before/while building:**
 - **Nous Portal subscription** — **CONFIRMED.** #2/#3 use the Tool Gateway (web search, cloud browser/vision, image-gen) + Nous Portal models; OpenRouter stays a secondary `--provider`. Run `hermes setup --portal` (interactive OAuth) when building the engine.
