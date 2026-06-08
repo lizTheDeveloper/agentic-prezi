@@ -6,6 +6,7 @@
   "engines": { "node": ">=26" },
   "scripts": {
     "test": "node --test",
+    "research": "node src/research/cli.mjs",
     "audit:deps": "node scripts/audit-deps.mjs",
     "scan:secrets": "node scripts/scan-secrets.mjs"
   }
