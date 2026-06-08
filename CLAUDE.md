@@ -34,3 +34,18 @@ SVG presentation and publishes it to a `*.themultiverse.school` URL.
   published within the last 7 days.
 - Vet every new package before adoption; prefer Node stdlib (`node:sqlite`, `node:crypto`, `node:http`).
 - Commit lockfiles, pin exact versions, install with `--ignore-scripts`, no `npx -y` auto-install.
+
+## Project status & next steps (handoff — updated 2026-06-08)
+
+**Specs (all 6 written, in `docs/superpowers/specs/`):** vision, #0 security, #1 core-app, #2 research, #3 generator, #4 deploy.
+**Build order:** #0 → #1 → #4 → #2 → #3.
+
+**Done:** **#0 security/supply-chain is BUILT and merged to `main`** (the gate scripts above + `docs/security/*`; 15 tests; plan in `docs/superpowers/plans/2026-06-08-sub0-security-supply-chain.md`). After cloning, run `sh scripts/setup-dev.sh` once.
+
+**Next:** write the #1 implementation plan (`docs/superpowers/plans/`) from `docs/superpowers/specs/2026-06-08-sub1-core-app-auth-publish-design.md`, then build it (walking skeleton: `node:http` + `node:sqlite` + magic-link auth + React/esbuild SPA + stub generator → publish to a `<slug>.themultiverse.school` URL). #1 runs locally with **no Docker**.
+
+**Open decisions to make before/while building:**
+- **Nous Portal subscription** — UNDECIDED; gates #2/#3 (OpenRouter only gives models, not the Tool Gateway). Doesn't block #0/#1.
+- #1: confirm **esbuild** as the bundler; pick + vet a **transactional email provider** (dev-mode console first).
+- **Maintenance:** bump the `.npmrc` `before=` date ~weekly (conservative when stale).
+- Risk gate: the **Hermes drivability spike** (cheap, throwaway VM + plain Docker) before building #2/#3's engine-dependent parts.
