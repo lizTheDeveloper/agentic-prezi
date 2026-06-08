@@ -1,2 +1,5 @@
 #!/bin/sh
-exec node scripts/scan-secrets.mjs
+# Local defense-in-depth: fast checks before a push leaves the dev machine.
+# (The full test suite runs server-side in the Hetzner pre-receive gate.)
+node scripts/scan-secrets.mjs || exit 1
+node scripts/audit-deps.mjs || exit 1

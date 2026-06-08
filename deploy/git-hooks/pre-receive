@@ -1,0 +1,14 @@
+#!/bin/sh
+# Installed on the Hetzner box's bare deploy repo (see #4). Rejects a push if the gate fails.
+# Not active until the box exists.
+set -e
+WORKDIR="$(mktemp -d)"
+trap 'rm -rf "$WORKDIR"' EXIT
+while read oldrev newrev refname; do
+  [ "$refname" = "refs/heads/main" ] || continue
+  GIT_WORK_TREE="$WORKDIR" git checkout -f "$newrev"
+  if ! ( cd "$WORKDIR" && sh scripts/ci-gate.sh ); then
+    echo "✗ pre-receive: supply-chain gate failed; push rejected." >&2
+    exit 1
+  fi
+done
