@@ -36,16 +36,25 @@ The asset we protect is the **operator's machine and infrastructure** — *not* 
 
 ## 2. Surface A — install-time supply chain (build now)
 
-### A1. 7-day minimum release-age gate (two layers, defense-in-depth)
+### A1. 7-day minimum release-age gate (three layers, defense-in-depth)
 
-**Layer 1 — resolution-time (prevents fresh versions being selected):**
-When adding or updating dependencies, resolve against a cutoff of `now − 7 days`:
+> **Timing matters — the dev box is the least-protected moment.** A worm has two execution moments: install-time (`postinstall`) and import/run-time (code that runs on `require`). `ignore-scripts` (A3) kills the first; the second is only stopped by keeping the fresh malicious version *out of the tree in the first place*. CI and pre-push (Layer 3) run **after** a developer has already done `npm install` + `npm test` locally — by then the dev box is compromised and CI just reports it. Therefore the **local install itself** must refuse fresh versions. That is Layer 1's job.
+
+**Layer 1 — `.npmrc before` (protects EVERY local install, automatically):**
+Set a static, conservative cutoff in the project `.npmrc`:
+```
+before=2026-06-01T00:00:00Z
+```
+npm honors `before` (verified: `npm config get before` recognizes the key) and resolves the **entire dependency tree** to versions published on or before that date — so *any* `npm install` on the dev box, including a careless raw one, silently refuses anything newer. A **static** date (bumped periodically, e.g. weekly, by the operator) errs *conservative*: an older cutoff = more min-age = safer, so staleness costs freshness, never security. This is the layer that actually protects the developer's machine at resolution time, before any test or import runs.
+
+**Layer 2 — `add-dep.sh` rolling 7-day window (for intentional adds):**
+When deliberately adding/updating a dep, use a precise rolling cutoff of `now − 7 days` (tighter than the static `.npmrc` date):
 ```
 npm install <pkg> --before="$(node -e 'console.log(new Date(Date.now()-7*864e5).toISOString())')"
 ```
-`npm --before` selects, for every package in the tree, the newest version published *before* the cutoff — so a package published 2 days ago is simply never chosen. This is a built-in npm mechanism (no dependency). Wrapped in a script: `scripts/add-dep.sh`.
+`--before` applies tree-wide (same mechanism as Layer 1). Wrapped in `scripts/add-dep.sh`.
 
-**Layer 2 — audit-time hard gate (catches anything Layer 1 missed; runs in CI + pre-push):**
+**Layer 3 — audit-time hard gate (authoritative; runs in CI + pre-push):**
 A custom **stdlib-only** Node script `scripts/audit-deps.mjs` (uses only `node:https`, `node:fs`, `node:path` — *zero third-party deps, nothing new to trust*):
 1. Parse `package-lock.json`; enumerate **every** package + resolved version (direct **and** transitive).
 2. For each, GET `https://registry.npmjs.org/<pkg>` and read `time[version]` (publish timestamp). Responses cached to `.cache/registry/` to stay rate-limit-friendly and offline-repeatable.
@@ -57,12 +66,13 @@ A custom **stdlib-only** Node script `scripts/audit-deps.mjs` (uses only `node:h
 
 ### A2. Lockfile + exact pinning
 - Commit `package-lock.json`; treat it as the source of truth.
-- `.npmrc`: `save-exact=true` (no `^`/`~` ranges), `engine-strict=true`.
+- `.npmrc`: `save-exact=true` (no `^`/`~` ranges), `engine-strict=true`, plus the `before=<cutoff>` from A1.
 - CI installs with `npm ci` (lockfile-exact), never `npm install`.
+- Pin Node via `package.json` `engines` + `.nvmrc` to a version where `node:sqlite` is stable (see A3).
 
 ### A3. Disable install scripts
 - `.npmrc`: `ignore-scripts=true`. This neutralizes the #1 worm *execution* vector (malicious `postinstall`).
-- **Native-module tension:** packages needing a build step (e.g. `better-sqlite3`) won't build under this. → Prefer pure-JS / Node stdlib. This is a concrete reason to favor **`node:sqlite`** over `better-sqlite3` for storage (resolves an open item from the vision spec: avoids a native build entirely under `ignore-scripts`). Any unavoidable native dep gets an explicit, reviewed, per-package build exception — documented, never blanket.
+- **Native-module tension:** packages needing a build step (e.g. `better-sqlite3`) won't build under this. → Prefer pure-JS / Node stdlib. This is a concrete reason to favor **`node:sqlite`** for storage. **Verified 2026-06-08:** `node:sqlite` runs **flag-free and without an `ExperimentalWarning`** on Node v26 (the operator's machine) — real SQL executed. So storage uses `node:sqlite`, avoiding a native build entirely under `ignore-scripts`. **Action:** pin the project to a Node version where this holds (≥ the release that stabilized `node:sqlite`); confirm the same on the chosen production LTS in #4. Any unavoidable native dep gets an explicit, reviewed, per-package build exception — documented, never blanket.
 
 ### A4. No `npx -y`
 - Policy: never `npx -y <pkg>` (auto-downloads + runs unpinned code). Tools are pinned in `devDependencies` and run via `npm run`. Applies equally to MCP servers (see B2).
@@ -99,6 +109,8 @@ A reviewer completes `docs/security/package-adoption-checklist.md` before any ne
 ## 3. Surface B — runtime sandbox (design now; implement in #4 / #3)
 
 > These are *requirements + design*. The control-plane/infra to enforce them is built in #4 (deploy) and #3 (generation). Each item below names its implementation home.
+>
+> **Contingent on the drivability spike (vision spec, Milestone zero).** B1/B2 assume Hermes behaviors not yet verified — that `terminal.backend = docker` reliably isolates execution and that MCP auto-install can be disabled. If the spike disproves these, the runtime-isolation design here must be revisited (e.g. wrap Hermes in our own outer container rather than trusting its backend). Do not treat Surface B as settled until the spike passes.
 
 ### B1. Agent code-execution isolation — *(impl: #4 + #3)*
 - Hermes config in the worker image **hard-sets `terminal.backend = docker`**; `local` is never permitted. A startup assertion refuses to run if the backend is `local`.
@@ -132,7 +144,7 @@ A reviewer completes `docs/security/package-adoption-checklist.md` before any ne
 ## 4. Deliverables of #0 (build-now subset)
 
 Files/artifacts this sub-project produces:
-- `.npmrc` (`save-exact`, `engine-strict`, `ignore-scripts`)
+- `.npmrc` (`save-exact`, `engine-strict`, `ignore-scripts`, `before=<cutoff>`) + `.nvmrc` (pinned Node)
 - `scripts/audit-deps.mjs` — the stdlib 7-day min-age + integrity hard gate
 - `scripts/add-dep.sh` — `--before` resolution wrapper
 - `scripts/scan-secrets.mjs` + `.githooks/pre-push` — secret pre-push scan
@@ -156,6 +168,7 @@ Surface-B items are **designed here** and **verified/implemented** in their name
 
 ## 6. Open items
 
-1. **`node:sqlite` final confirmation** — verify non-experimental on the target Node LTS (resolved in #1). #0's `ignore-scripts` stance strongly favors it (no native build). If it must be `better-sqlite3`, that's the documented native-build exception (A3).
-2. **Hetzner egress mechanism** — host firewall vs. container network policy vs. both — decided in #4.
-3. **Secret store choice** — Docker secrets vs. a small self-hosted manager — decided in #4.
+1. ~~`node:sqlite` confirmation~~ — **RESOLVED 2026-06-08:** flag-free, no `ExperimentalWarning`, real SQL ran on Node v26. Adopt `node:sqlite`; pin Node accordingly; re-confirm on the prod LTS in #4.
+2. **`npm --before` transitive coverage** — confirmed npm *recognizes* the `before` key; the plan must include a quick empirical check that it filters the **entire transitive tree** (expected: yes, it's the documented behavior) before relying on Layer 1/2.
+3. **Hetzner egress mechanism** — host firewall vs. container network policy vs. both — decided in #4.
+4. **Secret store choice** — Docker secrets vs. a small self-hosted manager — decided in #4.
