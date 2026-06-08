@@ -115,8 +115,8 @@ Research is multiplicative (sub-queries × adapters × candidates × verificatio
 
 ## 8. Engine dependency & spike contingency
 
-- **Hermes-dependent:** web search + cloud-browser extraction via Nous Portal.
-- **Insulated:** the scholarly adapters (OpenAlex/Crossref/arXiv/PubMed) are direct HTTPS — independent of Hermes. **Fallback if Hermes extraction is weak/unavailable:** direct `node:https` fetch of the source + a single extraction model call in our orchestrator. So #2 can largely function on scholarly sources alone, de-risking it relative to #3's ⚠️ code-execution stages.
+- **LLM-dependent (REQUIRED — updated 2026-06-08):** `SCOPE` and `SYNTHESIZE` now require an `llm` and **throw without one** — the earlier deterministic heuristic fallback was **removed** (fail-loud over silent degradation). The LLM is a plain **OpenAI-compatible HTTPS call** to Nous Portal (`src/research/providers/nous.mjs`, key `NOUS_RESEARCH_API_KEY`), so it does **not** depend on the Hermes `execute_code`/Docker spike. Offline tests inject a mock `llm`. *(This supersedes the original "deterministic synthesis fallback" insulation; if no-LLM operation is ever needed, restore that path behind a flag.)*
+- **Still insulated from the Hermes spike:** the scholarly adapters (OpenAlex/Crossref/arXiv/PubMed) are direct HTTPS. The only Hermes/cloud-browser-dependent piece is **full-text extraction** (still TODO); until it lands, research runs on scholarly metadata/abstracts + the required LLM.
 
 ---
 
