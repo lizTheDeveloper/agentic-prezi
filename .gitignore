@@ -25,3 +25,7 @@ build/
 .cache/
 # release image tarballs (used in #4)
 releases/
+
+# Un-ignore the secret-scanner scripts themselves (global gitignore has *secrets* pattern)
+!scripts/scan-secrets.mjs
+!scripts/scan-secrets.test.mjs
