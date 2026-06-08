@@ -5,6 +5,7 @@ import { HttpError, sendJson } from './http.ts';
 import { serveStatic } from './static.ts';
 import { requestMagicLink, verifyMagicLink, logout, me } from './auth.ts';
 import { list, create, detail, update, publish } from './presentations.ts';
+import { devLogin } from './dev-auth.ts';
 
 // The app-origin handler: JSON API under /api/* plus the static vanilla SPA (with client-side
 // routing fallback). Cookies + auth live here only (the published origin is separate).
@@ -28,6 +29,11 @@ export function buildRouter(): Router {
   r.get('/api/presentations/:id', detail);
   r.patch('/api/presentations/:id', update);
   r.post('/api/presentations/:id/publish', publish);
+
+  // DEV-ONLY bypass (GET + POST). The handler 404s unless config.devAuthBypass is on, so this is
+  // inert in production (and loadConfig refuses to enable it there at all).
+  r.get('/api/dev/login', devLogin);
+  r.post('/api/dev/login', devLogin);
   return r;
 }
 

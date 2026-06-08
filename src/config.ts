@@ -11,6 +11,7 @@ export interface Config {
   dbPath: string;
   publicDir: string;         // the vanilla SPA static files
   devMode: boolean;          // log magic links to the console instead of emailing
+  devAuthBypass: boolean;    // DEV ONLY: enable /api/dev/login (instant session, no email)
   magicTokenTtlMs: number;
   sessionTtlMs: number;
   maxBodyBytes: number;
@@ -28,6 +29,12 @@ function bool(v: string | undefined, dflt: boolean): boolean {
 export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
   const baseDomain = env.BASE_DOMAIN ?? 'themultiverse.school';
   const devMode = bool(env.DEV_MODE, env.NODE_ENV !== 'production');
+
+  // Hard refusal: the dev auth bypass must NEVER be enabled in production. Fail loudly at
+  // startup rather than silently ignore a dangerous misconfiguration.
+  if (env.NODE_ENV === 'production' && bool(env.DEV_AUTH_BYPASS, false)) {
+    throw new Error('DEV_AUTH_BYPASS must never be enabled in production');
+  }
   return {
     port: Number(env.PORT ?? 8787),
     baseDomain,
@@ -44,6 +51,8 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
     dbPath: env.DB_PATH ?? 'data/app.db',
     publicDir: env.PUBLIC_DIR ?? 'public',
     devMode,
+    // Only honored in dev (and never in prod, per the guard above). Default off.
+    devAuthBypass: devMode && bool(env.DEV_AUTH_BYPASS, false),
     magicTokenTtlMs: Number(env.MAGIC_TOKEN_TTL_MS ?? 15 * 60_000),
     sessionTtlMs: Number(env.SESSION_TTL_MS ?? 30 * 24 * 60 * 60_000),
     maxBodyBytes: Number(env.MAX_BODY_BYTES ?? 256 * 1024),

@@ -41,6 +41,22 @@ npm start            # or: node src/server.ts
 Then open `http://localhost:8787`. In **dev mode** (the default) magic-link emails are printed to
 the server console instead of being sent — copy the link from there to sign in.
 
+### Dev auth bypass (local testing)
+
+To skip the email step entirely while developing, start with `DEV_AUTH_BYPASS=1`:
+
+```sh
+DEV_AUTH_BYPASS=1 npm start
+```
+
+Then just visit `http://localhost:8787/api/dev/login` in the browser (or `curl` it) — it mints a
+session for `dev@localhost` (pass `{"email":"you@example.com"}` to `POST /api/dev/login` to choose).
+Open `/` and you're signed in.
+
+**This is DEV ONLY.** It is honored only when `DEV_MODE` is on, the endpoint 404s unless
+`DEV_AUTH_BYPASS=1`, and `loadConfig` **refuses to start** if it's set under `NODE_ENV=production`.
+Never set `DEV_AUTH_BYPASS` on the Hetzner box.
+
 ### Host-based routing (local)
 
 The server dispatches on the `Host` header (wildcard DNS/TLS comes in #4):

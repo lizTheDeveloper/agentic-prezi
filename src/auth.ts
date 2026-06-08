@@ -36,6 +36,21 @@ export function requireSession(req: IncomingMessage, ctx: Ctx): SessionUser {
   return session;
 }
 
+// Mint a new session for a user and return the Set-Cookie header value. Only the hash of the
+// opaque secret is persisted. Shared by magic-link verify and the dev auth bypass.
+export function createSessionCookie(ctx: Ctx, userId: number, now: number = Date.now()): string {
+  const sessionSecret = randomToken(32);
+  ctx.db
+    .prepare('INSERT INTO sessions (session_hash, user_id, expires_at, created_at) VALUES (?, ?, ?, ?)')
+    .run(sha256(sessionSecret), userId, now + ctx.config.sessionTtlMs, now);
+  return serializeCookie(SESSION_COOKIE, sessionSecret, {
+    httpOnly: true,
+    secure: ctx.config.cookieSecure,
+    sameSite: 'Lax',
+    maxAgeMs: ctx.config.sessionTtlMs,
+  });
+}
+
 function buildVerifyLink(ctx: Ctx, token: string): string {
   const scheme = ctx.config.cookieSecure ? 'https' : 'http';
   const host = ctx.config.devMode ? `localhost:${ctx.config.port}` : `app.${ctx.config.baseDomain}`;
@@ -100,18 +115,7 @@ export async function verifyMagicLink(req: IncomingMessage, res: ServerResponse,
   const user = ctx.db.prepare('SELECT id FROM users WHERE email = ?').get(row.email) as { id: number } | undefined;
   if (!user) throw new HttpError(400, 'this sign-in link is invalid or has expired');
 
-  const sessionSecret = randomToken(32);
-  const expiresAt = now + ctx.config.sessionTtlMs;
-  ctx.db
-    .prepare('INSERT INTO sessions (session_hash, user_id, expires_at, created_at) VALUES (?, ?, ?, ?)')
-    .run(sha256(sessionSecret), user.id, expiresAt, now);
-
-  const cookie = serializeCookie(SESSION_COOKIE, sessionSecret, {
-    httpOnly: true,
-    secure: ctx.config.cookieSecure,
-    sameSite: 'Lax',
-    maxAgeMs: ctx.config.sessionTtlMs,
-  });
+  const cookie = createSessionCookie(ctx, user.id, now);
   sendJson(res, 200, { ok: true, user: { email: row.email } }, { 'set-cookie': cookie });
 }
 

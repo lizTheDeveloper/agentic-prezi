@@ -78,5 +78,8 @@ if (import.meta.url === `file://${process.argv[1]}`) {
     console.log(`  app origin:       http://localhost:${port}  (Host: app.${app.ctx.config.baseDomain})`);
     console.log(`  published origin: Host: <slug>.${app.ctx.config.baseDomain}`);
     if (app.ctx.config.devMode) console.log('  dev mode: magic links are logged to this console.');
+    if (app.ctx.config.devAuthBypass) {
+      console.log('  ⚠ DEV AUTH BYPASS ENABLED — GET/POST /api/dev/login mints a session with no email. DEV ONLY.');
+    }
   });
 }
