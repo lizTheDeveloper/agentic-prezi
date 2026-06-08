@@ -5,6 +5,7 @@
   "type": "module",
   "engines": { "node": ">=26" },
   "scripts": {
+    "start": "node src/server.ts",
     "test": "node --test",
     "audit:deps": "node scripts/audit-deps.mjs",
     "scan:secrets": "node scripts/scan-secrets.mjs"

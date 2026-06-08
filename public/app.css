@@ -1,0 +1,50 @@
+:root {
+  color-scheme: dark;
+  --bg: #05060d;
+  --panel: #11142a;
+  --ink: #e8ecff;
+  --muted: #9aa6d6;
+  --accent: #6b8cff;
+  --line: #2a2f55;
+  --ok: #4ade80;
+  --bad: #f87171;
+}
+* { box-sizing: border-box; }
+html, body { margin: 0; min-height: 100%; }
+body { background: var(--bg); color: var(--ink); font: 16px/1.5 system-ui, -apple-system, sans-serif; }
+a { color: var(--accent); }
+.topbar {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 12px 20px; border-bottom: 1px solid var(--line);
+}
+.brand { font-weight: 700; text-decoration: none; color: var(--ink); }
+.topbar nav a, .topbar nav button { margin-left: 14px; }
+main { max-width: 820px; margin: 0 auto; padding: 28px 20px; }
+h1 { font-size: 1.6rem; margin: 0 0 4px; }
+h2 { font-size: 1.15rem; }
+.muted { color: var(--muted); }
+input, textarea, button {
+  font: inherit; color: var(--ink); background: var(--panel);
+  border: 1px solid var(--line); border-radius: 8px; padding: 10px 12px;
+}
+input, textarea { width: 100%; }
+textarea { min-height: 240px; resize: vertical; }
+label { display: block; margin: 16px 0 6px; color: var(--muted); font-size: .9rem; }
+button {
+  cursor: pointer; background: var(--accent); border-color: var(--accent); color: #07102e; font-weight: 600;
+}
+button.secondary { background: transparent; color: var(--ink); }
+button:disabled { opacity: .5; cursor: default; }
+.row { display: flex; gap: 10px; align-items: center; margin-top: 16px; flex-wrap: wrap; }
+.card {
+  display: block; padding: 14px 16px; margin: 10px 0; border: 1px solid var(--line);
+  border-radius: 10px; background: var(--panel); text-decoration: none; color: var(--ink);
+}
+.card:hover { border-color: var(--accent); }
+.badge { font-size: .75rem; padding: 2px 8px; border-radius: 999px; border: 1px solid var(--line); color: var(--muted); }
+.badge.published { color: var(--ok); border-color: var(--ok); }
+.badge.failed { color: var(--bad); border-color: var(--bad); }
+.notice { padding: 12px 14px; border-radius: 8px; background: var(--panel); border: 1px solid var(--line); margin: 16px 0; }
+.notice.error { border-color: var(--bad); color: var(--bad); }
+.notice.ok { border-color: var(--ok); }
+code { background: #0a0d1f; padding: 2px 6px; border-radius: 5px; }
