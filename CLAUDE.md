@@ -25,6 +25,7 @@ SVG presentation and publishes it to a `*.themultiverse.school` URL.
 - **Vision spec:** `docs/superpowers/specs/2026-06-08-agentic-prezi-vision-design.md`
 - **Control plane:** Node + TypeScript. **Agent engine:** Hermes Agent (Nous Portal).
 - **Hosting:** Hetzner + Docker, remote-only — **do not run Docker locally.**
+- **CI/CD:** **Never use GitHub Actions** (or any third-party CI) — ever. CI runs on the Hetzner box via a server-side git `pre-receive` hook (`scripts/ci-gate.sh`). GitHub is a public code mirror only.
 
 ## Supply-chain security policy
 

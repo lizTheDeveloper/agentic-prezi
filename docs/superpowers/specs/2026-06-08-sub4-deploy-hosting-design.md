@@ -87,7 +87,7 @@ Resolves the #0/#3 requirement to run untrusted **agent-generated code** safely,
 
 ## 7. Deploy pipeline (build-on-box, tarball rollback — no registry)
 
-1. **CI (GitHub Actions, on PR/tag):** run the #0 supply-chain gate (`audit-deps.mjs`), tests, lint. Gate failures block the tag. (CI does **not** build the deploy image.)
+1. **Gate (Hetzner server-side — NO GitHub Actions):** pushing to the box's **bare deploy repo** triggers a git **`pre-receive` hook** that runs the #0 `scripts/ci-gate.sh` (`npm ci --ignore-scripts`, audit gate, secret scan, tests). Failure **rejects the push** — bad code never reaches the box. GitHub remains a public mirror only.
 2. **Release:** push a git **tag**.
 3. **Deploy script (`scripts/deploy.sh`, runs over SSH):** on the box → `git fetch && checkout <tag>` → `docker build` (build also re-runs `npm ci --ignore-scripts` + the audit gate as defense-in-depth) → `docker save` the new image to `releases/<tag>.tar` (retain last **N**) → run DB migrations → `docker compose up -d` (brief downtime acceptable for single-box MVP).
 4. **Rollback:** `docker load releases/<previous>.tar` + `compose up -d`; migrations are forward-only with documented down-path for risky ones.

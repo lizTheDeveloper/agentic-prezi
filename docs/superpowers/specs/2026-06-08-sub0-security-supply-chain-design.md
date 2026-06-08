@@ -25,7 +25,7 @@ The asset we protect is the **operator's machine and infrastructure** — *not* 
 | Worm in a direct/transitive npm dep executes on install | `ignore-scripts=true`; min-age gate; lockfile integrity | A |
 | Freshly-published malicious version pulled in | **7-day minimum release-age gate** (resolution + audit) | A |
 | Lockfile tampering / version drift | Committed lockfile + exact pins + integrity hashes | A |
-| Compromised GitHub Action | Actions pinned by commit SHA; least-privilege `permissions` | A |
+| Compromised third-party CI (e.g. GitHub Actions) | **Not used at all** — CI is a Hetzner server-side git `pre-receive` hook; GitHub is a public mirror only | A |
 | Secret committed to a public repo | `.gitignore` + env-only secrets + `CLAUDE.md` warning + pre-push scan | A |
 | Agent-generated code escapes / exfiltrates | Docker terminal backend, never `local`; default-deny egress; no secrets in sub-sandbox | B |
 | `npx -y` auto-installs a malicious MCP server | npx auto-install **disabled**; pinned local MCP allowlist | B |
@@ -88,15 +88,12 @@ A reviewer completes `docs/security/package-adoption-checklist.md` before any ne
 - [ ] Does it *need* install scripts? If yes, scrutinize heavily or reject.
 - [ ] Could the Node stdlib do this instead? (Prefer stdlib.)
 
-### A6. CI enforcement (GitHub Actions)
-- Workflow `.github/workflows/supply-chain.yml` on every PR/push:
-  - `npm ci --ignore-scripts`
-  - `node scripts/audit-deps.mjs` (the A1 hard gate)
-  - `npm audit --audit-level=high` (advisory signal, non-fatal vs. min-age gate which is fatal)
-- **Harden the workflow itself** (Actions are a supply-chain vector):
-  - Pin every `uses:` to a full **commit SHA**, not a tag.
-  - `permissions: { contents: read }` at top level; elevate per-job only if needed.
-  - No secrets exposed to PR workflows from forks.
+### A6. CI enforcement (Hetzner server-side — **NO GitHub Actions, ever**)
+Third-party CI (GitHub Actions) is itself a supply-chain/trust surface, so we don't use it. **GitHub is a public code mirror only.** The gate runs on our own infrastructure:
+- **Authoritative gate = a git `pre-receive` hook on the Hetzner box's bare deploy repo.** On every push it runs `scripts/ci-gate.sh` (`npm ci --ignore-scripts` → `audit:deps` → `scan:secrets` → `npm test`) and **rejects the push if any step fails**, so bad code never lands on the box.
+- **`scripts/ci-gate.sh`** encapsulates the gate so the identical command runs locally, in the pre-receive hook, and during the #4 build.
+- **Local defense-in-depth:** the `pre-push` hook runs the fast gates (secret scan + `audit:deps`) before a push leaves the dev machine.
+- The pre-receive hook is installed on the box in **#4** (where the bare repo + box exist); #0 delivers the hook script + `ci-gate.sh`.
 
 ### A7. Dev-machine hygiene
 - Secrets live in a git-ignored `.env` (local) and the Hetzner secret store (prod) — **never** in the repo. `.gitignore` + `CLAUDE.md` already enforce/announce this.
@@ -148,7 +145,7 @@ Files/artifacts this sub-project produces:
 - `scripts/audit-deps.mjs` — the stdlib 7-day min-age + integrity hard gate
 - `scripts/add-dep.sh` — `--before` resolution wrapper
 - `scripts/scan-secrets.mjs` + `.githooks/pre-push` — secret pre-push scan
-- `.github/workflows/supply-chain.yml` — CI enforcement (SHA-pinned, least-priv)
+- `scripts/ci-gate.sh` + `deploy/git-hooks/pre-receive` — CI enforcement on Hetzner (server-side git hook; **no GitHub Actions**)
 - `docs/security/package-adoption-checklist.md`
 - `docs/security/mcp-allowlist.md` (stub; populated in #3)
 - `docs/security/runtime-sandbox.md` — the §3 requirements, as the contract #4/#3 must satisfy

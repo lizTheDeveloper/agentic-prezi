@@ -6,7 +6,7 @@
 
 **Architecture:** All tooling is **stdlib-only** `.mjs` scripts (no npm dependencies), tested with the built-in `node:test` runner. Pure logic is exported and unit-tested offline; thin I/O wrappers (registry fetch, git) run only when a script is invoked directly. The dependency gate has three layers: `.npmrc before=` (every local install), `add-dep.sh` (intentional adds), and `audit-deps.mjs` (authoritative, in CI + pre-push).
 
-**Tech Stack:** Node ≥26 (verified `node:sqlite` is flag-free here), ESM `.mjs`, `node:test`, `node:https`, `node:fs`, `node:child_process`, GitHub Actions. Zero runtime dependencies.
+**Tech Stack:** Node ≥26 (verified `node:sqlite` is flag-free here), ESM `.mjs`, `node:test`, `node:https`, `node:fs`, `node:child_process`, POSIX `sh` + server-side git hooks (CI on Hetzner — **no GitHub Actions**). Zero runtime dependencies.
 
 **Spec:** `docs/superpowers/specs/2026-06-08-sub0-security-supply-chain-design.md`
 
@@ -24,8 +24,9 @@
 | `scripts/scan-secrets.mjs` | Secret scanner. Pure `scanText` + CLI that scans tracked files. |
 | `scripts/scan-secrets.test.mjs` | Unit tests for `scanText` (fake keys built by concatenation so the source file holds no real-looking literal). |
 | `scripts/add-dep.sh` | Wrapper: `npm install … --before=<now-7d>`. |
-| `.githooks/pre-push` | Runs the secret scan; blocks push on a hit. |
-| `.github/workflows/supply-chain.yml` | CI: SHA-pinned actions, least-priv, runs the gate + tests. |
+| `.githooks/pre-push` | Local defense-in-depth: secret scan + dependency gate before a push leaves the dev machine. |
+| `scripts/ci-gate.sh` | The full gate (install/audit/scan/test) — runs locally, in the Hetzner pre-receive hook, and during the #4 build. **No GitHub Actions.** |
+| `deploy/git-hooks/pre-receive` | Hetzner bare-repo hook that runs `ci-gate.sh` and rejects a failing push (installed on the box in #4). |
 | `docs/security/package-adoption-checklist.md` | Manual new-dependency review checklist. |
 | `docs/security/mcp-allowlist.md` | Stub allowlist (populated in #3). |
 | `docs/security/runtime-sandbox.md` | Surface-B requirements that #4/#3 must satisfy. |
@@ -413,7 +414,7 @@ git add scripts/scan-secrets.mjs scripts/scan-secrets.test.mjs .githooks/pre-pus
 git commit -m "feat: secret scanner + pre-push hook"
 ```
 
-> Note: `core.hooksPath` is local git config, not committed. The CI workflow (Task 6) also runs the scan so enforcement doesn't rely on every clone enabling the hook. Document the `git config core.hooksPath .githooks` step in the README during #1.
+> Note: `core.hooksPath` is local git config, not committed. The Hetzner pre-receive gate (Task 6) also runs the scan, so enforcement doesn't rely on every clone enabling the local hook. Document the `git config core.hooksPath .githooks` step in the README during #1.
 
 ---
 
@@ -457,71 +458,89 @@ git commit -m "feat: add-dep.sh 7-day min-age install wrapper"
 
 ---
 
-## Task 6: CI workflow — SHA-pinned, least-privilege
+## Task 6: CI gate on Hetzner (server-side git hook) — **NO GitHub Actions**
 
 **Files:**
-- Create: `.github/workflows/supply-chain.yml`
+- Create: `scripts/ci-gate.sh`, `deploy/git-hooks/pre-receive`
+- Modify: `.githooks/pre-push` (add the dependency gate)
 
-- [ ] **Step 1: Resolve exact commit SHAs for the actions (do not pin by tag)**
+> **Hard rule: no GitHub Actions, ever.** The authoritative gate runs server-side on the Hetzner box (the hook is *installed* on the box in #4, when the bare repo + box exist). #0 delivers the gate script + hook; the local `pre-push` hook is defense-in-depth. GitHub is a public mirror only.
 
-Run these and copy the SHAs into the workflow below (replace the two `REPLACE_WITH_SHA` tokens):
+- [ ] **Step 1: Create `scripts/ci-gate.sh`**
 
-```bash
-gh api repos/actions/checkout/git/ref/tags/v4.2.2 --jq .object.sha
-gh api repos/actions/setup-node/git/ref/tags/v4.1.0 --jq .object.sha
+```sh
+#!/bin/sh
+# Full supply-chain + test gate. Runs locally, in the Hetzner pre-receive hook, and during the #4 build.
+set -e
+npm ci --ignore-scripts
+npm run audit:deps
+npm run scan:secrets
+npm test
+echo "✓ ci-gate: all checks passed"
 ```
 
-- [ ] **Step 2: Create `.github/workflows/supply-chain.yml`**
-
-```yaml
-name: supply-chain
-on:
-  push: { branches: [main] }
-  pull_request:
-permissions:
-  contents: read
-jobs:
-  gate:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@REPLACE_WITH_SHA       # actions/checkout v4.2.2
-      - uses: actions/setup-node@REPLACE_WITH_SHA     # actions/setup-node v4.1.0
-        with:
-          node-version-file: .nvmrc
-      - name: Install (no scripts, lockfile-exact)
-        run: npm ci --ignore-scripts
-      - name: Dependency min-age + integrity gate
-        run: npm run audit:deps
-      - name: Secret scan
-        run: npm run scan:secrets
-      - name: Unit tests
-        run: npm test
-      - name: Advisory audit (non-fatal)
-        run: npm audit --audit-level=high || true
-```
-
-> `npm ci` requires a lockfile; Task 1 created one. With zero deps it is a no-op install, which is fine — the job still exercises the gate, scanner, and tests.
-
-- [ ] **Step 3: Commit and push; confirm the workflow goes green**
+- [ ] **Step 2: Make it executable and verify it runs clean**
 
 ```bash
-git add .github/workflows/supply-chain.yml
-git commit -m "ci: supply-chain gate (SHA-pinned, least-privilege)"
-git push
+chmod +x scripts/ci-gate.sh
+sh scripts/ci-gate.sh
 ```
 
-Then: `gh run watch` (or check the Actions tab). Expected: the `gate` job passes.
+Expected: install clean (zero deps), `audit-deps: no dependencies to check.`, `✓ secret scan: clean`, tests pass, then `✓ ci-gate: all checks passed`.
 
-- [ ] **Step 4: Verify the gate actually blocks a too-fresh dep (manual, on a throwaway branch)**
+- [ ] **Step 3: Create the Hetzner bare-repo hook `deploy/git-hooks/pre-receive`**
+
+```sh
+#!/bin/sh
+# Installed on the Hetzner box's bare deploy repo (see #4). Rejects a push if the gate fails.
+# Not active until the box exists.
+set -e
+WORKDIR="$(mktemp -d)"
+trap 'rm -rf "$WORKDIR"' EXIT
+while read oldrev newrev refname; do
+  [ "$refname" = "refs/heads/main" ] || continue
+  GIT_WORK_TREE="$WORKDIR" git checkout -f "$newrev"
+  if ! ( cd "$WORKDIR" && sh scripts/ci-gate.sh ); then
+    echo "✗ pre-receive: supply-chain gate failed; push rejected." >&2
+    exit 1
+  fi
+done
+```
+
+- [ ] **Step 4: Make the hook executable**
 
 ```bash
-git checkout -b test/fresh-dep
+chmod +x deploy/git-hooks/pre-receive
+```
+
+- [ ] **Step 5: Extend the local `pre-push` hook to also run the fast dependency gate**
+
+Replace `.githooks/pre-push` (created in Task 4) with:
+
+```sh
+#!/bin/sh
+# Local defense-in-depth: fast checks before a push leaves the dev machine.
+# (The full test suite runs server-side in the Hetzner pre-receive gate.)
+node scripts/scan-secrets.mjs || exit 1
+node scripts/audit-deps.mjs || exit 1
+```
+
+- [ ] **Step 6: Verify the gate blocks a too-fresh dep (local — no CI involved)**
+
+```bash
 node -e "const fs=require('node:fs');const l=JSON.parse(fs.readFileSync('package-lock.json'));l.packages['node_modules/__fake__']={version:'9.9.9',integrity:'sha512-x'};fs.writeFileSync('package-lock.json',JSON.stringify(l,null,2));"
 npm run audit:deps    # expect: violation 'no-publish-time' (fake pkg) -> exit 1
-git checkout main && git branch -D test/fresh-dep && git checkout -- package-lock.json
+git checkout -- package-lock.json
 ```
 
-Expected: the gate exits non-zero on the injected package. (Confirms the red-build behavior from the spec's testing section.)
+Expected: the gate exits non-zero on the injected package, then the lockfile is restored. (Confirms the reject-on-violation behavior the Hetzner pre-receive hook relies on.)
+
+- [ ] **Step 7: Commit**
+
+```bash
+git add scripts/ci-gate.sh deploy/git-hooks/pre-receive .githooks/pre-push
+git commit -m "ci: Hetzner server-side gate (pre-receive) + ci-gate.sh; no GitHub Actions"
+```
 
 ---
 
@@ -633,12 +652,12 @@ npm ci --ignore-scripts && npm run audit:deps && npm run scan:secrets && npm tes
 
 Expected: install clean, gate OK (no deps), scan clean, all unit tests pass.
 
-- [ ] **Step 2: Confirm CI is green on `main`**
+- [ ] **Step 2: Confirm the full gate script passes**
 
-Run: `gh run list --workflow=supply-chain --limit 1`
-Expected: latest run `completed / success`.
+Run: `sh scripts/ci-gate.sh`
+Expected: `✓ ci-gate: all checks passed`. (This same script is what the Hetzner `pre-receive` hook will run once the box exists in #4 — there is no GitHub Actions run to check.)
 
-- [ ] **Step 3: Push**
+- [ ] **Step 3: Push to the GitHub mirror**
 
 ```bash
 git push
@@ -648,7 +667,7 @@ git push
 
 ## Self-review (completed by plan author)
 
-- **Spec coverage:** A1 `.npmrc before` (Task 1) + `add-dep.sh` (Task 5) + `audit-deps.mjs` (Tasks 2-3); A2 lockfile/pins/engines (Task 1); A3 `ignore-scripts` (Task 1); A4 no-`npx -y` (checklist Task 8); A5 adoption checklist (Task 8); A6 CI SHA-pinned least-priv (Task 6); A7 secret pre-push scan (Task 4); open item #2 `--before` transitive check (Task 7); Surface-B requirement docs (Task 8). ✓
-- **Placeholders:** the only intentional fill-ins are the two action SHAs, with exact `gh` commands to resolve them (Task 6 Step 1) — actionable, not vague.
+- **Spec coverage:** A1 `.npmrc before` (Task 1) + `add-dep.sh` (Task 5) + `audit-deps.mjs` (Tasks 2-3); A2 lockfile/pins/engines (Task 1); A3 `ignore-scripts` (Task 1); A4 no-`npx -y` (checklist Task 8); A5 adoption checklist (Task 8); A6 CI via Hetzner pre-receive gate + `ci-gate.sh`, **no GitHub Actions** (Task 6); A7 secret pre-push scan (Task 4); open item #2 `--before` transitive check (Task 7); Surface-B requirement docs (Task 8). ✓
+- **Placeholders:** none — every step has complete, runnable content.
 - **Type consistency:** `parseLockfile`/`evaluate`/`scanText` signatures match across implementation, tests, and CLI. `evaluate` reasons (`too-fresh`/`missing-integrity`/`no-publish-time`) are consistent in tests and CLI output.
 ```
