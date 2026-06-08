@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { parseLockfile, evaluate } from './audit-deps.mjs';
+import { parseLockfile, evaluate, findRangeSpecs } from './audit-deps.mjs';
 
 const NOW = Date.UTC(2026, 5, 8); // 2026-06-08
 const day = (y, m, d) => Date.UTC(y, m, d);
@@ -42,4 +42,13 @@ test('flags when publish time is unknown', () => {
   const pkgs = [{ name: 'mystery', version: '9.9.9', integrity: 'sha512-x' }];
   const v = evaluate(pkgs, () => null, { now: NOW, minAgeDays: 7 });
   assert.equal(v[0].reason, 'no-publish-time');
+});
+
+test('findRangeSpecs flags non-exact version specs', () => {
+  const pj = { dependencies: { a: '1.2.3', b: '^1.0.0', c: '~2.0.0' }, devDependencies: { d: '4.5.6' } };
+  assert.deepEqual(findRangeSpecs(pj).map(o => o.name).sort(), ['b', 'c']);
+});
+test('findRangeSpecs returns empty for exact-only / missing deps', () => {
+  assert.deepEqual(findRangeSpecs({ dependencies: { a: '1.0.0' } }), []);
+  assert.deepEqual(findRangeSpecs({}), []);
 });

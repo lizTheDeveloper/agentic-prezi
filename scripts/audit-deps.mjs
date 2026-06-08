@@ -34,6 +34,18 @@ export function evaluate(packages, timeLookup, { now, minAgeDays = MIN_AGE_DAYS 
   return violations;
 }
 
+const EXACT_SEMVER = /^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?(?:\+[0-9A-Za-z.-]+)?$/;
+
+export function findRangeSpecs(pkgJson) {
+  const offenders = [];
+  for (const field of ['dependencies', 'devDependencies', 'optionalDependencies', 'peerDependencies']) {
+    for (const [name, spec] of Object.entries(pkgJson[field] || {})) {
+      if (!EXACT_SEMVER.test(spec)) offenders.push({ field, name, spec });
+    }
+  }
+  return offenders;
+}
+
 // --- registry I/O (not unit-tested; exercised via CLI) ---
 
 function cachePath(name) {
@@ -63,6 +75,14 @@ async function registryTimes(name) {
 }
 
 async function main() {
+  if (existsSync('package.json')) {
+    const ranges = findRangeSpecs(JSON.parse(readFileSync('package.json', 'utf8')));
+    if (ranges.length) {
+      console.error('✗ audit-deps: non-exact version specs in package.json (use scripts/add-dep.sh):');
+      for (const r of ranges) console.error(`  - ${r.field}.${r.name}: "${r.spec}"`);
+      process.exit(1);
+    }
+  }
   if (!existsSync('package-lock.json')) {
     console.error('No package-lock.json found.'); process.exit(1);
   }

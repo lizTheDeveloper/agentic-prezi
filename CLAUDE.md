@@ -26,6 +26,7 @@ SVG presentation and publishes it to a `*.themultiverse.school` URL.
 - **Control plane:** Node + TypeScript. **Agent engine:** Hermes Agent (Nous Portal).
 - **Hosting:** Hetzner + Docker, remote-only — **do not run Docker locally.**
 - **CI/CD:** **Never use GitHub Actions** (or any third-party CI) — ever. CI runs on the Hetzner box via a server-side git `pre-receive` hook (`scripts/ci-gate.sh`). GitHub is a public code mirror only.
+- **Local setup:** after cloning, run `sh scripts/setup-dev.sh` once to enable the git hooks (`core.hooksPath`). The Hetzner `pre-receive` gate is authoritative regardless.
 
 ## Supply-chain security policy
 
