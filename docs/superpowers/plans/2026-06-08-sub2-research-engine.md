@@ -68,8 +68,10 @@ Verified end-to-end: an LLM that fabricates citation ids cannot poison the doc (
 - **Graceful figure handling** (§7/§8) — a malformed LLM `figure` is now dropped (`sanitizeFigure`) instead of failing the whole doc.
 - **HTTP hardening** (§7) — redirect hop cap, response-size cap, HEAD-based resolvability (no PDF download), opt-in `RESEARCH_EGRESS_ALLOWLIST` SSRF seam.
 
+**Done in follow-up (provider wiring):**
+- **LLM scope + synthesis** — a real `llm` is now wired into `runResearch({ llm })` via `src/research/providers/nous.mjs`: the **Nous Portal**, an OpenAI-compatible aggregator (`POST {base}/chat/completions`, Bearer `NOUS_RESEARCH_API_KEY`, default `anthropic/claude-opus-4.8`, override with `NOUS_RESEARCH_MODEL` / `NOUS_RESEARCH_BASE_URL`). Zero npm deps (`node:https`); pure `buildRequestBody`/`extractCompletionText` are unit-tested, the HTTP poster is injected for offline tests, and the CLI enables it automatically when the key is present (`--no-llm` to force deterministic). Verified live end-to-end. OpenRouter is the documented secondary `--provider` and speaks the same wire shape (point the base URL / key at it).
+
 **Deferred (provider-gated / later):**
-- **LLM scope + synthesis quality** — the deterministic fallback de-risks the pipeline but produces naive findings (keyword breadth, no topical synthesis). Nous Portal is now **confirmed**; next step is wiring a `makeJsonLlm(complete)` impl into `runResearch({ llm })`.
 - **Hermes web search + cloud-browser extraction** adapter (§2/§8 enrichment path) — extraction-shaped (not `search`/`fetchMeta`); track with the engine work.
 - **Per-presentation research cache** (§5) — belongs at the #1 job/worker seam; the adapter-response cache is in place.
 - **Tuning** (§10.1/§10.2): ranking weights and budget numbers — defaults are sensible starting points.
