@@ -105,7 +105,9 @@ Resolves the #0/#3 requirement to run untrusted **agent-generated code** safely,
 
 ## 9. Milestone-zero spike (this sub-project provides the host)
 
-Once `hermes-worker` + `sandbox-broker` + the gVisor job sandbox exist, run the spike (vision spec §5): prove `hermes chat -q` runs headless via Nous Portal, executes in the gVisor/docker sandbox, and leaves readable artifacts in the workspace. **This is the gate** that confirms the engine choice before #2/#3's ⚠️ stages are built. #4 delivers the environment + a `scripts/spike.sh` harness.
+**The minimal drivability spike does NOT wait on #4.** It runs first on a throwaway VM with **plain Docker + Nous Portal creds** (no broker, no gVisor, no hardening) to answer the four vision-spec §5 questions cheaply — that is the early engine gate, and it runs in parallel with #0/#1.
+
+What #4 owns instead: once the engine is **proven** and we build the production runtime (broker + gVisor + egress), #4 **re-verifies** the same behaviors under the hardened sandbox (the §11 acceptance checks) via `scripts/spike.sh`. So: cheap spike early (decoupled) → harden here only after it passes.
 
 ---
 

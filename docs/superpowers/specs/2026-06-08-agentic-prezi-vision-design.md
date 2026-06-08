@@ -113,6 +113,8 @@ The whole platform rests on the least-proven assumption: **that Hermes is reliab
 
 If the spike fails, we revisit the engine choice (Node-native Agent SDK / Claude Code headless were the runner-up) **before** sinking effort into #2/#3.
 
+**Run the spike cheap and decoupled:** a **throwaway VM with plain Docker + Nous Portal creds** — *not* #4's production sandbox (broker + gVisor + hardening). The spike answers only the four questions above; #4 hardens the runtime **after** the engine is proven. This keeps the gate ~1 hour and early. Critically, the spike is **independent of #0 and #1**, which can be planned and built in parallel (#1 runs locally with **no Docker at all**, thanks to the stub generator).
+
 ---
 
 ## 6. Cross-cutting security law (operator-focused)
