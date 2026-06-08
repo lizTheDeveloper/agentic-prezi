@@ -11,7 +11,6 @@ import { generateStub, renderSvg } from '../src/generator.ts';
 import { escapeXml } from '../src/validate.ts';
 import { checkRateLimit } from '../src/rate-limit.ts';
 import { JobQueue } from '../src/queue.ts';
-import { safeEqualHex } from '../src/crypto.ts';
 
 function memDb() {
   const db = new DatabaseSync(':memory:');
@@ -95,11 +94,4 @@ test('job queue: fail requeues with backoff until attempts exhausted', () => {
   q.claim(150); // attempts -> 2
   assert.equal(q.fail(id, 'err', policy, 150), false); // exhausted -> failed
   assert.equal(q.get(id)!.status, 'failed');
-});
-
-test('safeEqualHex compares constant-length hex safely', () => {
-  assert.equal(safeEqualHex('abcd', 'abcd'), true);
-  assert.equal(safeEqualHex('abcd', 'abce'), false);
-  assert.equal(safeEqualHex('ab', 'abcd'), false);
-  assert.equal(safeEqualHex('', ''), false);
 });

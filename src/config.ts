@@ -1,5 +1,3 @@
-import { randomBytes } from 'node:crypto';
-
 // Runtime configuration, driven entirely by env vars so nothing secret lives in source.
 // Sensible dev defaults let `node src/server.ts` run with no setup; production overrides
 // (cookie secret, base domain, real-email creds) come from the environment / runtime store.
@@ -8,7 +6,6 @@ export interface Config {
   port: number;
   baseDomain: string;        // e.g. themultiverse.school
   appHosts: Set<string>;     // hosts routed to the app origin (SPA + /api/*)
-  cookieSecret: string;      // server-side secret (cookies store only a hash of the session)
   cookieSecure: boolean;     // Secure flag — off for local http dev, on in production
   dataDir: string;           // published artifacts live under <dataDir>/presentations/<id>/
   dbPath: string;
@@ -40,9 +37,8 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
       'localhost',
       '127.0.0.1',
     ]),
-    // In dev, an ephemeral random secret is fine (sessions reset on restart). Production MUST
-    // set COOKIE_SECRET to a stable value from the runtime secret store.
-    cookieSecret: env.COOKIE_SECRET ?? randomBytes(32).toString('hex'),
+    // Sessions are opaque high-entropy random tokens stored hashed-at-rest in the `sessions`
+    // table, so no cookie-signing secret is needed (the server-side store is the authority).
     cookieSecure: bool(env.COOKIE_SECURE, !devMode),
     dataDir: env.DATA_DIR ?? 'data',
     dbPath: env.DB_PATH ?? 'data/app.db',
