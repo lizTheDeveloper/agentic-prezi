@@ -21,6 +21,9 @@ build/
 .idea/
 .vscode/
 
+# runtime data: sqlite db + published presentation artifacts
+data/
+
 # audit registry cache
 .cache/
 # release image tarballs (used in #4)
