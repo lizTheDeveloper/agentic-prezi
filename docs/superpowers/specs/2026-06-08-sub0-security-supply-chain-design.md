@@ -166,6 +166,6 @@ Surface-B items are **designed here** and **verified/implemented** in their name
 ## 6. Open items
 
 1. ~~`node:sqlite` confirmation~~ — **RESOLVED 2026-06-08:** flag-free, no `ExperimentalWarning`, real SQL ran on Node v26. Adopt `node:sqlite`; pin Node accordingly; re-confirm on the prod LTS in #4.
-2. **`npm --before` transitive coverage** — confirmed npm *recognizes* the `before` key; the plan must include a quick empirical check that it filters the **entire transitive tree** (expected: yes, it's the documented behavior) before relying on Layer 1/2.
+2. ~~`npm --before` transitive coverage~~ — **RESOLVED 2026-06-08:** empirically confirmed tree-wide. `npm install express --before=2015-01-01` selected `express@4.10.6` **and** all 35 transitive deps at 2014-era versions (`cookie@0.1.2`, `debug@2.1.1`, …). Layers 1/2 rely on this safely.
 3. **Hetzner egress mechanism** — host firewall vs. container network policy vs. both — decided in #4.
 4. **Secret store choice** — Docker secrets vs. a small self-hosted manager — decided in #4.
