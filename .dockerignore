@@ -1,0 +1,22 @@
+# Keep the image minimal and secret-free. The repo is public, but defense-in-depth:
+# never ship local data, env files, caches, tests, docs, or VCS metadata.
+.git
+.gitignore
+.githooks
+node_modules
+data
+.cache
+*.db
+*.db-*
+.env
+.env.*
+**/*.test.ts
+**/*.test.mjs
+test
+docs
+deploy
+releases
+README.md
+CLAUDE.md
+*.log
+.DS_Store

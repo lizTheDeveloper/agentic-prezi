@@ -8,6 +8,8 @@
 
 > This repository is **public**. Secrets live only on the box / in Docker secrets — never in repo or images. See `CLAUDE.md`.
 
+> **⚠️ Deployment-reality update (2026-06-08):** the actual target box (`cto-tycoon-hel1`, the operator's **main** host) is **Coolify-managed** — `coolify-proxy` (Traefik v3.6) owns :80/:443 and DNS for `themultiverse.school` is on **Cloudflare**. The §4 self-Caddy + ACME **DNS-01 wildcard** and the §7 build-on-box + `pre-receive` + tarball-rollback pipeline **do not apply to this box** — they would fight Coolify (which owns the Traefik config) and double-bind the proxy ports. The skeleton (#1) deploy is therefore a **Coolify application** behind the existing Traefik, with Cloudflare owning edge TLS. See **`deploy/coolify-deploy.md`** for the live architecture, blockers, and go-live sequence. §5 (gVisor sandbox-broker), §10.1 (self-hosted GlitchTip), and the Hermes worker remain the design for the engine-bearing build, deferred until after the drivability spike.
+
 ---
 
 ## 1. Purpose & topology
