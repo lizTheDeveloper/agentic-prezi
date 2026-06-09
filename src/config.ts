@@ -44,7 +44,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
     baseDomain,
     // The app (cookie-bearing) origin. `app.<base>` is the historical default, but the host is
     // configurable via APP_HOST because a given deployment's `app.` subdomain may be taken by a
-    // sibling service (on the shared box it is) — prod sets APP_HOST=aethrix.themultiverse.school.
+    // sibling service (on the shared box it is) — prod sets APP_HOST=presapp.themultiverse.school.
     appHosts: new Set([
       baseDomain,
       `app.${baseDomain}`,
