@@ -42,9 +42,13 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
   return {
     port: Number(env.PORT ?? 8787),
     baseDomain,
+    // The app (cookie-bearing) origin. `app.<base>` is the historical default, but the host is
+    // configurable via APP_HOST because a given deployment's `app.` subdomain may be taken by a
+    // sibling service (on the shared box it is) — prod sets APP_HOST=aethrix.themultiverse.school.
     appHosts: new Set([
       baseDomain,
       `app.${baseDomain}`,
+      ...(env.APP_HOST ? [env.APP_HOST] : []),
       'localhost',
       '127.0.0.1',
     ]),
