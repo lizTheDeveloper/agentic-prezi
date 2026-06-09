@@ -19,14 +19,15 @@ interface PresentationRow {
   updated_at: number;
 }
 
-function publicView(row: PresentationRow, baseDomain: string) {
+function publicView(row: PresentationRow, publishedHost: string) {
   return {
     id: row.id,
     title: row.title,
     sourceWriteup: row.source_writeup,
     status: row.status,
     slug: row.slug,
-    url: row.slug && row.status === 'published' ? `https://${row.slug}.${baseDomain}` : null,
+    // Path-based on the single dedicated published host: https://presentations.<base>/p/<slug>
+    url: row.slug && row.status === 'published' ? `https://${publishedHost}/p/${row.slug}` : null,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
   };
@@ -51,7 +52,7 @@ export function list(req: IncomingMessage, res: ServerResponse, ctx: Ctx): void 
   const rows = ctx.db
     .prepare('SELECT * FROM presentations WHERE user_id = ? ORDER BY updated_at DESC')
     .all(session.userId) as PresentationRow[];
-  sendJson(res, 200, { presentations: rows.map((r) => publicView(r, ctx.config.baseDomain)) });
+  sendJson(res, 200, { presentations: rows.map((r) => publicView(r, ctx.config.publishedHost)) });
 }
 
 // POST /api/presentations { title, sourceWriteup }
@@ -68,14 +69,14 @@ export async function create(req: IncomingMessage, res: ServerResponse, ctx: Ctx
     )
     .run(session.userId, title, writeup, now, now);
   const row = ctx.db.prepare('SELECT * FROM presentations WHERE id = ?').get(Number(info.lastInsertRowid)) as PresentationRow;
-  sendJson(res, 201, { presentation: publicView(row, ctx.config.baseDomain) });
+  sendJson(res, 201, { presentation: publicView(row, ctx.config.publishedHost) });
 }
 
 // GET /api/presentations/:id
 export function detail(req: IncomingMessage, res: ServerResponse, ctx: Ctx, params: Params): void {
   const session = requireSession(req, ctx);
   const row = ownedOr404(ctx, parseId(params), session.userId);
-  sendJson(res, 200, { presentation: publicView(row, ctx.config.baseDomain) });
+  sendJson(res, 200, { presentation: publicView(row, ctx.config.publishedHost) });
 }
 
 // PATCH /api/presentations/:id { title?, sourceWriteup? }
@@ -92,7 +93,7 @@ export async function update(req: IncomingMessage, res: ServerResponse, ctx: Ctx
     .prepare('UPDATE presentations SET title = ?, source_writeup = ?, updated_at = ? WHERE id = ?')
     .run(title, writeup, Date.now(), row.id);
   const updated = ctx.db.prepare('SELECT * FROM presentations WHERE id = ?').get(row.id) as PresentationRow;
-  sendJson(res, 200, { presentation: publicView(updated, ctx.config.baseDomain) });
+  sendJson(res, 200, { presentation: publicView(updated, ctx.config.publishedHost) });
 }
 
 // POST /api/presentations/:id/publish — enqueue generation, return immediately (async).

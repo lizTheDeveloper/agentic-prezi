@@ -55,3 +55,45 @@ test('slug Host serves the published artifacts with a strict CSP and no cookies'
   const escape = await t.client.request('GET', '/../../app.db', { host });
   assert.equal(escape.status, 404);
 });
+
+test('published host serves presentations path-based at /p/<slug>/ (the deploy routing)', async () => {
+  const t = (current = await bootTestApp());
+  const c = await signIn(t, 'pathed@example.com');
+  const id = (await c.request('POST', '/api/presentations', { body: { title: 'Pathed', sourceWriteup: 'hi' } }))
+    .json.presentation.id;
+  await c.request('POST', `/api/presentations/${id}/publish`);
+  await t.app.worker.drain();
+  const detail = (await c.request('GET', `/api/presentations/${id}`)).json.presentation;
+  const slug = detail.slug;
+
+  // The published URL handed to the user is path-based on the single dedicated host.
+  assert.equal(detail.url, `https://presentations.themultiverse.school/p/${slug}`);
+
+  const host = 'presentations.themultiverse.school';
+
+  // Bare /p/<slug> redirects to a trailing slash so the index's relative asset refs resolve.
+  const bare = await t.client.request('GET', `/p/${slug}`, { host });
+  assert.equal(bare.status, 301);
+  assert.equal(bare.headers['location'], `/p/${slug}/`);
+
+  // /p/<slug>/ serves the index with the strict, cookieless published CSP.
+  const index = await t.client.request('GET', `/p/${slug}/`, { host });
+  assert.equal(index.status, 200);
+  assert.match(index.headers['content-type'] ?? '', /text\/html/);
+  const csp = index.headers['content-security-policy'] ?? '';
+  assert.match(csp, /default-src 'self'/);
+  assert.match(csp, /connect-src 'none'/);
+  assert.equal(index.headers['set-cookie'], undefined);
+
+  // Assets resolve under the slug path.
+  const manifest = await t.client.request('GET', `/p/${slug}/manifest.json`, { host });
+  assert.equal(manifest.status, 200);
+  assert.equal(manifest.json.slug, slug);
+
+  // Unknown slug, malformed slug, and traversal all 404 — never leak or escape.
+  assert.equal((await t.client.request('GET', '/p/no-such-slug/', { host })).status, 404);
+  assert.equal((await t.client.request('GET', '/p/Bad_Slug!/', { host })).status, 404);
+  assert.equal((await t.client.request('GET', `/p/${slug}/../../app.db`, { host })).status, 404);
+  // The app SPA must NOT be served from the published host.
+  assert.equal((await t.client.request('GET', '/', { host })).status, 404);
+});

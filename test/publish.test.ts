@@ -25,7 +25,7 @@ test('publishing a draft yields artifacts, a unique slug, and a retrievable pres
   const detail = (await c.request('GET', `/api/presentations/${id}`)).json.presentation;
   assert.equal(detail.status, 'published');
   assert.ok(detail.slug, 'slug minted');
-  assert.equal(detail.url, `https://${detail.slug}.themultiverse.school`);
+  assert.equal(detail.url, `https://presentations.themultiverse.school/p/${detail.slug}`);
 
   // artifacts written per the generator contract
   const dir = join(t.dataDir, 'presentations', String(id));

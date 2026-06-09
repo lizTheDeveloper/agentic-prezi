@@ -19,51 +19,59 @@ runs ~40 production containers. Discovered reality:
 So the native path is: **deploy agentic-prezi as a Coolify application**, let Coolify+Traefik
 own routing + origin TLS, and let Cloudflare own edge TLS for the wildcard.
 
-## Architecture (this box)
+## Architecture (this box) — TWO explicit subdomains, NO wildcard
 
 ```
-Browser ──HTTPS──► Cloudflare edge (Universal SSL: *.themultiverse.school)
+Browser ──HTTPS──► Cloudflare edge (Universal SSL, one-level *.themultiverse.school)
                         │  (proxied, "Full" mode)
                         ▼
-            Traefik (coolify-proxy, :443)  ──Host route──►  agentic-prezi container (:8787)
-                                                                 │
-                                                          volume: /app/data (SQLite + artifacts)
+            Traefik (coolify-proxy, :443)
+                ├── Host app.themultiverse.school           ──► agentic-prezi container :8787  (SPA + /api, cookies)
+                └── Host presentations.themultiverse.school ──► same container :8787  (published /p/<slug>, cookieless)
+                                                                       │
+                                                                volume: /app/data (SQLite + artifacts)
 ```
 
-The container is built from the repo `Dockerfile` (Node 26, zero npm deps, `node src/server.ts`).
-It serves the SPA + `/api/*` on app hosts and `slug.themultiverse.school` published pages by Host
-(see `src/server.ts` Host dispatch). Traefik passes the Host header through; the app routes on it.
+ONE container (repo `Dockerfile`, Node 26, zero deps, `node src/server.ts`) serves BOTH hosts;
+`src/server.ts` dispatches by Host: `app.` → app origin, `presentations.` → published origin.
+Published pages are **path-based** — `presentations.themultiverse.school/p/<slug>/` — so there is
+no per-presentation subdomain and therefore **no wildcard DNS record** (a wildcard would swallow
+the ~40 sibling deployments already on `folkfork.`, `bazaar.`, … `themultiverse.school`).
+Origin isolation is preserved: published pages live on a different host from the cookie-bearing app.
 
-## Wildcard TLS — the DNS-01 apparatus likely disappears
+## TLS — no DNS-01, no wildcard needed
 
-Cloudflare **Universal SSL** covers a single label of wildcard — `*.themultiverse.school` — for
-free at the edge. With per-presentation subdomains one level deep (`slug.themultiverse.school`),
-**Cloudflare terminates TLS for all of them** with no DNS-01 on the box. Origin then only needs a
-cert Cloudflare trusts in **Full** mode (Coolify/Let's Encrypt for `app.themultiverse.school`, or
-Full(strict) with a proper origin cert). **VERIFY** against this account's Cloudflare plan before
-relying on it; if it holds, no Cloudflare API token / DNS-01 plugin is needed at all.
+Both `app.` and `presentations.` are **single-level** subdomains, covered by Cloudflare
+**Universal SSL** at the edge for free. No two-level wildcard, no Cloudflare API token, no DNS-01
+plugin. Origin just needs a cert Cloudflare trusts in **Full** mode (Coolify/Let's Encrypt per
+host). **VERIFY** Universal SSL is active on this account's plan (it is, by default).
 
-## Blockers — none of these are bypassable, and each needs operator-held access
+## Blockers — none bypassable; each needs operator-held access
 
-1. **Cloudflare DNS** — add `app.themultiverse.school` and `*.themultiverse.school` records
-   pointing at the box (proxied). Needs Cloudflare account access or a scoped API token.
-2. **Transactional email** — prod magic-link login is the ONLY auth in prod
-   (`DEV_AUTH_BYPASS` is refused when `NODE_ENV=production`). `src/email.ts` currently has only
-   `ConsoleEmailSender`. **Until a real provider is wired + its key set in Coolify, no one can
-   log in.** Pick + vet a provider (node:https POST, no SDK) through the #0 supply-chain gate.
+1. **Cloudflare DNS** — add two **explicit** proxied records → the box (37.27.36.108):
+   `app.themultiverse.school` and `presentations.themultiverse.school`. **Do NOT add a wildcard.**
+   Needs Cloudflare account access or a scoped API token.
+2. **SendGrid key in Coolify** — prod magic-link is the ONLY auth (`DEV_AUTH_BYPASS` refused when
+   `NODE_ENV=production`), and the app now **refuses to start** in prod without an email provider.
+   The sender is wired (`src/email-sendgrid.ts`, zero-dep). Set `SENDGRID_API_KEY` (the token
+   already on the box — see `multiverse-email-worker`) + `EMAIL_FROM` (a SendGrid-verified sender)
+   in Coolify secrets. **Wiring ≠ key present: login stays broken until the key is set.**
 3. **Coolify access** — adding the app needs Coolify admin (UI at the box, or an API token).
 
 ## Go-live sequence (staging gate inside the public launch — no risky big-bang)
 
 1. In Coolify: create an Application from this repo (or `Dockerfile`). Set the persistent
    volume mount `/app/data`. Set env from `deploy/prod.env.example` (real secrets in Coolify's
-   secret store). Do **not** set `DEV_AUTH_BYPASS`.
-2. Wire + deploy the email provider; confirm a magic link actually delivers.
-3. Assign domain `app.themultiverse.school` in Coolify → Traefik route + origin cert.
-4. Add the Cloudflare records (proxied). Test login + create + publish on a real subdomain.
-5. Verify on the box: app boots with `NODE_ENV=production`, `/api/dev/login` returns 404,
-   published origin serves strict CSP with **no** cookies, secrets absent from the image.
-6. Flip/confirm `*.themultiverse.school` so published `slug.` pages resolve. Launch.
+   secret store): `SENDGRID_API_KEY`, `EMAIL_FROM`, `COOKIE_SECURE=true`, `BASE_DOMAIN`,
+   `PUBLISHED_HOST`. Do **not** set `DEV_AUTH_BYPASS`.
+2. Attach BOTH domains to the one app in Coolify: `app.themultiverse.school` and
+   `presentations.themultiverse.school` → Traefik routes + per-host origin certs.
+3. Add the two explicit Cloudflare records (proxied) → the box. **No wildcard.**
+4. Verify on the box: app boots `NODE_ENV=production` (it refuses to start if email is unset);
+   `app.` serves the SPA, `presentations.themultiverse.school/p/<slug>/` serves a published
+   deck with strict CSP and **no** cookies; `/api/dev/login` → 404; secrets absent from the image.
+5. Confirm a magic link actually delivers (SendGrid) and login → create → publish works end to end.
+6. Launch.
 
 ## Explicitly deferred (need the Hermes drivability spike first; not in this skeleton)
 

@@ -6,6 +6,7 @@ export interface Config {
   port: number;
   baseDomain: string;        // e.g. themultiverse.school
   appHosts: Set<string>;     // hosts routed to the app origin (SPA + /api/*)
+  publishedHost: string;     // single dedicated host serving published pages path-based (/p/<slug>)
   cookieSecure: boolean;     // Secure flag — off for local http dev, on in production
   dataDir: string;           // published artifacts live under <dataDir>/presentations/<id>/
   dbPath: string;
@@ -19,6 +20,9 @@ export interface Config {
   maxWriteupLen: number;
   rateLimitWindowMs: number;
   rateLimitMax: number;
+  emailApiKey?: string;      // SendGrid key (runtime secret); enables real magic-link email
+  emailFrom?: string;        // verified sender address for outbound magic links
+  emailFromName?: string;
 }
 
 function bool(v: string | undefined, dflt: boolean): boolean {
@@ -44,6 +48,11 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
       'localhost',
       '127.0.0.1',
     ]),
+    // Published presentations live path-based under ONE dedicated host (default
+    // presentations.<baseDomain>) — NOT per-slug subdomains. That keeps a single explicit DNS
+    // record (no wildcard that would capture sibling deployments' subdomains) while preserving
+    // origin isolation from the cookie-bearing app host.
+    publishedHost: env.PUBLISHED_HOST ?? `presentations.${baseDomain}`,
     // Sessions are opaque high-entropy random tokens stored hashed-at-rest in the `sessions`
     // table, so no cookie-signing secret is needed (the server-side store is the authority).
     cookieSecure: bool(env.COOKIE_SECURE, !devMode),
@@ -60,5 +69,8 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
     maxWriteupLen: Number(env.MAX_WRITEUP_LEN ?? 50_000),
     rateLimitWindowMs: Number(env.RATE_LIMIT_WINDOW_MS ?? 60 * 60_000),
     rateLimitMax: Number(env.RATE_LIMIT_MAX ?? 5),
+    emailApiKey: env.SENDGRID_API_KEY || undefined,
+    emailFrom: env.EMAIL_FROM || undefined,
+    emailFromName: env.EMAIL_FROM_NAME || undefined,
   };
 }
