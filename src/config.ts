@@ -6,6 +6,7 @@ export interface Config {
   port: number;
   baseDomain: string;        // e.g. themultiverse.school
   appHosts: Set<string>;     // hosts routed to the app origin (SPA + /api/*)
+  appHost: string;           // canonical app host for absolute links (magic-link verify URL)
   publishedHost: string;     // single dedicated host serving published pages path-based (/p/<slug>)
   cookieSecure: boolean;     // Secure flag — off for local http dev, on in production
   dataDir: string;           // published artifacts live under <dataDir>/presentations/<id>/
@@ -52,6 +53,10 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
       'localhost',
       '127.0.0.1',
     ]),
+    // The canonical app host used to build absolute links (e.g. the magic-link verify URL).
+    // Must be the host the browser actually reaches — defaults to `app.<base>` but is overridden
+    // by APP_HOST where that subdomain is taken (prod: presapp.themultiverse.school).
+    appHost: env.APP_HOST ?? `app.${baseDomain}`,
     // Published presentations live path-based under ONE dedicated host (default
     // presentations.<baseDomain>) — NOT per-slug subdomains. That keeps a single explicit DNS
     // record (no wildcard that would capture sibling deployments' subdomains) while preserving

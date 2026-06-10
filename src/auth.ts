@@ -51,9 +51,9 @@ export function createSessionCookie(ctx: Ctx, userId: number, now: number = Date
   });
 }
 
-function buildVerifyLink(ctx: Ctx, token: string): string {
+export function buildVerifyLink(ctx: Ctx, token: string): string {
   const scheme = ctx.config.cookieSecure ? 'https' : 'http';
-  const host = ctx.config.devMode ? `localhost:${ctx.config.port}` : `app.${ctx.config.baseDomain}`;
+  const host = ctx.config.devMode ? `localhost:${ctx.config.port}` : ctx.config.appHost;
   return `${scheme}://${host}/auth/verify?token=${encodeURIComponent(token)}`;
 }
 

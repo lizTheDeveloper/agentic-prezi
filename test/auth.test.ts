@@ -1,8 +1,26 @@
 import { test, afterEach } from 'node:test';
 import assert from 'node:assert/strict';
 import { sha256 } from '../src/crypto.ts';
+import { buildVerifyLink } from '../src/auth.ts';
+import { loadConfig } from '../src/config.ts';
 import { bootTestApp, makeClient, tokenFromLink } from './helpers.ts';
 import type { TestApp } from './helpers.ts';
+
+test('magic-link verify URL uses the configured app host + https in production', () => {
+  const config = loadConfig({
+    NODE_ENV: 'production',
+    APP_HOST: 'presapp.themultiverse.school',
+    COOKIE_SECURE: 'true',
+    SENDGRID_API_KEY: 'SG.x',
+    EMAIL_FROM: 'aethrix@themultiverse.school',
+  });
+  assert.equal(buildVerifyLink({ config } as never, 'TOK'), 'https://presapp.themultiverse.school/auth/verify?token=TOK');
+});
+
+test('magic-link verify URL falls back to app.<base> when APP_HOST is unset', () => {
+  const config = loadConfig({ NODE_ENV: 'production', SENDGRID_API_KEY: 'SG.x', EMAIL_FROM: 'a@b.c' });
+  assert.equal(buildVerifyLink({ config } as never, 'T'), 'https://app.themultiverse.school/auth/verify?token=T');
+});
 
 let current: TestApp | null = null;
 async function boot() { current = await bootTestApp(); return current; }
