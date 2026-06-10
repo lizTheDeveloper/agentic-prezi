@@ -6,7 +6,7 @@ DNS-01-wildcard + build-on-box-tarball design in `docs/.../sub4-deploy-hosting-d
 
 ## Why the original #4 design doesn't apply here
 
-The target is `cto-tycoon-hel1` (37.27.36.108), the operator's **main** box — it already
+The target is `the main box` (<origin-IP: local memory only>), the operator's **main** box — it already
 runs ~40 production containers. Discovered reality:
 
 - **`coolify-proxy` (Traefik v3.6) owns :80 and :443.** We cannot bind our own Caddy there
@@ -48,7 +48,7 @@ host). **VERIFY** Universal SSL is active on this account's plan (it is, by defa
 
 ## Blockers — none bypassable; each needs operator-held access
 
-1. **Cloudflare DNS** — add two **explicit** proxied records → the box (37.27.36.108):
+1. **Cloudflare DNS** — add two **explicit** proxied records → the box (<origin-IP: local memory only>):
    `presapp.themultiverse.school` and `presentations.themultiverse.school`. (`app.` is taken by a
    sibling service — do **not** use it; do **not** add a wildcard.) Needs Cloudflare access or a
    scoped API token.
