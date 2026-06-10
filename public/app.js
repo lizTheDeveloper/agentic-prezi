@@ -52,49 +52,30 @@ function renderNav() {
   if (currentUser) {
     navEl.append(
       el('span', { class: 'muted' }, currentUser.email),
-      el('button', { class: 'secondary', onclick: async () => { await api('POST', '/api/auth/logout'); currentUser = null; navigate('/'); } }, 'Sign out'),
+      el('button', { class: 'secondary', onclick: async () => {
+        let r; try { r = await api('POST', '/api/auth/logout'); } catch { r = {}; }
+        currentUser = null;
+        if (r && r.redirect) location.href = r.redirect; else navigate('/');
+      } }, 'Sign out'),
     );
   }
 }
 
 // --- views ---
-function viewLogin() {
+async function viewLogin() {
   clear(appEl);
-  const status = el('div');
-  const input = el('input', { type: 'email', placeholder: 'you@example.com', autocomplete: 'email' });
-  const form = el('form', {
-    onsubmit: async (e) => {
-      e.preventDefault();
-      clear(status);
-      try {
-        const r = await api('POST', '/api/auth/request', { email: input.value.trim() });
-        status.append(notice(r.message + ' (In dev mode the link is printed in the server console.)', 'ok'));
-      } catch (err) {
-        status.append(notice(err.message, 'error'));
-      }
-    },
-  },
+  // Auth is The Multiverse School SSO — bounce the browser to the School login, returning here.
+  let loginUrl = null;
+  try { loginUrl = (await api('GET', '/api/auth/login-url')).loginUrl; } catch { /* offline */ }
+  const go = () => {
+    if (!loginUrl) return;
+    location.href = loginUrl + (loginUrl.includes('?') ? '&' : '?') + 'next=' + encodeURIComponent(location.origin + '/');
+  };
+  appEl.append(
     el('h1', {}, 'Sign in'),
-    el('p', { class: 'muted' }, 'We’ll email you a magic link — no password.'),
-    el('label', {}, 'Email'),
-    input,
-    el('div', { class: 'row' }, el('button', { type: 'submit' }, 'Send magic link')),
+    el('p', { class: 'muted' }, 'Aethrix uses your themultiverse.school account.'),
+    el('div', { class: 'row' }, el('button', { onclick: go }, 'Continue with The Multiverse School')),
   );
-  appEl.append(form, status);
-}
-
-async function viewVerify(token) {
-  clear(appEl);
-  appEl.append(el('h1', {}, 'Signing you in…'));
-  try {
-    await api('POST', '/api/auth/verify', { token });
-    await loadUser();
-    navigate('/');
-  } catch (err) {
-    clear(appEl);
-    appEl.append(el('h1', {}, 'Sign-in failed'), notice(err.message, 'error'),
-      el('div', { class: 'row' }, el('a', { href: '/', 'data-link': '' }, 'Back to sign in')));
-  }
 }
 
 async function viewDashboard() {
@@ -207,10 +188,6 @@ async function viewEditor(id) {
 // --- router ---
 async function render() {
   const path = location.pathname;
-  if (path === '/auth/verify') {
-    const token = new URLSearchParams(location.search).get('token') || '';
-    return viewVerify(token);
-  }
   if (currentUser === null) await loadUser();
   if (!currentUser) return viewLogin();
 

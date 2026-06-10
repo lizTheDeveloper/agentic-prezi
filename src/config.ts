@@ -21,9 +21,15 @@ export interface Config {
   maxWriteupLen: number;
   rateLimitWindowMs: number;
   rateLimitMax: number;
-  emailApiKey?: string;      // SendGrid key (runtime secret); enables real magic-link email
-  emailFrom?: string;        // verified sender address for outbound magic links
+  emailApiKey?: string;      // SendGrid key (runtime secret); currently unused (auth is School-SSO)
+  emailFrom?: string;
   emailFromName?: string;
+  // School SSO (the only auth): resolve the shared `.themultiverse.school` session via Redis.
+  schoolRedisUrl?: string;            // redis://[user]:[pass]@host:port (runtime secret)
+  schoolSessionCookieName: string;    // default 'session'
+  schoolSessionKeyPrefix: string;     // default 'school:session:'
+  schoolLoginUrl: string;             // where to send unauthenticated users
+  schoolLogoutUrl: string;
 }
 
 function bool(v: string | undefined, dflt: boolean): boolean {
@@ -39,6 +45,11 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
   // startup rather than silently ignore a dangerous misconfiguration.
   if (env.NODE_ENV === 'production' && bool(env.DEV_AUTH_BYPASS, false)) {
     throw new Error('DEV_AUTH_BYPASS must never be enabled in production');
+  }
+  // School SSO is the ONLY production auth, so refuse to start a prod deploy without the shared
+  // Redis configured — otherwise nobody could ever log in (and there's no fallback path).
+  if (!devMode && !env.SCHOOL_SESSION_REDIS_URL) {
+    throw new Error('SCHOOL_SESSION_REDIS_URL is required in production (School SSO is the only login)');
   }
   return {
     port: Number(env.PORT ?? 8787),
@@ -81,5 +92,10 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
     emailApiKey: env.SENDGRID_API_KEY || undefined,
     emailFrom: env.EMAIL_FROM || undefined,
     emailFromName: env.EMAIL_FROM_NAME || undefined,
+    schoolRedisUrl: env.SCHOOL_SESSION_REDIS_URL || undefined,
+    schoolSessionCookieName: env.SCHOOL_SESSION_COOKIE_NAME || 'session',
+    schoolSessionKeyPrefix: env.SCHOOL_SESSION_KEY_PREFIX || 'school:session:',
+    schoolLoginUrl: env.SCHOOL_LOGIN_URL || `https://${baseDomain}/login`,
+    schoolLogoutUrl: env.SCHOOL_LOGOUT_URL || `https://${baseDomain}/logout`,
   };
 }

@@ -3,9 +3,8 @@ import type { Ctx } from './context.ts';
 import { Router } from './router.ts';
 import { HttpError, sendJson } from './http.ts';
 import { serveStatic } from './static.ts';
-import { requestMagicLink, verifyMagicLink, logout, me } from './auth.ts';
+import { attachResolvedUser, getSession, logout, me } from './auth.ts';
 import { list, create, detail, update, publish } from './presentations.ts';
-import { devLogin } from './dev-auth.ts';
 
 // The app-origin handler: JSON API under /api/* plus the static vanilla SPA (with client-side
 // routing fallback). Cookies + auth live here only (the published origin is separate).
@@ -19,21 +18,19 @@ export function buildRouter(): Router {
   const r = new Router();
   r.get('/api/health', (_req, res) => sendJson(res, 200, { ok: true }));
 
-  r.post('/api/auth/request', requestMagicLink);
-  r.post('/api/auth/verify', verifyMagicLink);
   r.post('/api/auth/logout', logout);
   r.get('/api/me', me);
+  // The SPA hits this when unauthenticated to learn where to send the browser for School SSO.
+  r.get('/api/auth/login-url', (req, res, ctx) => {
+    if (getSession(req)) { sendJson(res, 200, { authenticated: true }); return; }
+    sendJson(res, 200, { authenticated: false, loginUrl: ctx.config.schoolLoginUrl });
+  });
 
   r.get('/api/presentations', list);
   r.post('/api/presentations', create);
   r.get('/api/presentations/:id', detail);
   r.patch('/api/presentations/:id', update);
   r.post('/api/presentations/:id/publish', publish);
-
-  // DEV-ONLY bypass (GET + POST). The handler 404s unless config.devAuthBypass is on, so this is
-  // inert in production (and loadConfig refuses to enable it there at all).
-  r.get('/api/dev/login', devLogin);
-  r.post('/api/dev/login', devLogin);
   return r;
 }
 
@@ -51,6 +48,9 @@ export async function handleApp(req: IncomingMessage, res: ServerResponse, ctx: 
       sendJson(res, 403, { error: 'missing X-Requested-With header' });
       return;
     }
+    // Resolve the School SSO session once per API request (cached); handlers read it via
+    // getSession/requireSession. Fails closed to null if Redis/the cookie can't be resolved.
+    attachResolvedUser(req, await ctx.schoolSso.resolve(req, ctx));
     const route = router.match(method, path);
     if (!route) {
       sendJson(res, 404, { error: 'not found' });

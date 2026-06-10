@@ -7,6 +7,7 @@ import type { App } from '../src/server.ts';
 import { loadConfig } from '../src/config.ts';
 import type { EmailSender } from '../src/email.ts';
 import type { WorkerOptions } from '../src/worker.ts';
+import { createSchoolSso } from '../src/school-sso.ts';
 
 // In-memory capturing email sender (no console noise during tests).
 export class CaptureEmail implements EmailSender {
@@ -73,6 +74,9 @@ export interface TestApp {
   email: CaptureEmail;
   dataDir: string;
   client: ReturnType<typeof makeClient>;
+  // sid -> raw School session blob (JSON). signIn() registers entries; the injected mock SSO
+  // resolver reads from here instead of a real Redis.
+  schoolSessions: Map<string, string>;
 }
 
 export async function bootTestApp(worker: WorkerOptions = { pollMs: 1e9 }): Promise<TestApp> {
@@ -87,21 +91,26 @@ export async function bootTestApp(worker: WorkerOptions = { pollMs: 1e9 }): Prom
     PORT: '0',
   });
   const email = new CaptureEmail();
-  const app = createApp({ config, email, worker });
+  // Mock School SSO: the real resolver logic (cache, blob parse, user upsert) over an in-memory
+  // "Redis". cacheTtlMs 0 → every request re-resolves, so tests are deterministic.
+  const schoolSessions = new Map<string, string>();
+  const schoolSso = createSchoolSso({
+    target: { host: 'mock', port: 0 },
+    cacheTtlMs: 0,
+    redisGet: async (_t, key) => schoolSessions.get(key.slice('school:session:'.length)) ?? null,
+  });
+  const app = createApp({ config, email, worker, schoolSso });
   const port = await app.listen(0);
-  return { app, port, email, dataDir, client: makeClient(port) };
+  return { app, port, email, dataDir, client: makeClient(port), schoolSessions };
 }
 
-// Sign in a fresh user end-to-end, returning a client with the session cookie set.
-export async function signIn(t: TestApp, emailAddr: string) {
+// "Sign in" a user: register a valid School session blob and return a client whose cookie jar
+// carries the matching `session=<sid>` cookie, so every request authenticates as that user.
+export function signIn(t: TestApp, emailAddr: string, opts: { sid?: string; expiresSec?: number } = {}) {
+  const sid = opts.sid ?? `sid-${emailAddr.replace(/[^a-z0-9]/gi, '')}`;
+  const expires = opts.expiresSec ?? Math.floor(Date.now() / 1000) + 3600;
+  t.schoolSessions.set(sid, JSON.stringify({ expires, data: { email: emailAddr } }));
   const client = makeClient(t.port);
-  await client.request('POST', '/api/auth/request', { body: { email: emailAddr } });
-  const link = t.email.sent[t.email.sent.length - 1].link;
-  const token = new URL(link).searchParams.get('token')!;
-  await client.request('POST', '/api/auth/verify', { body: { token } });
+  client.jar.cookie = `session=${sid}`;
   return client;
-}
-
-export function tokenFromLink(link: string): string {
-  return new URL(link).searchParams.get('token')!;
 }
