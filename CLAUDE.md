@@ -61,3 +61,6 @@ SVG presentation and publishes it to a `*.themultiverse.school` URL.
 - #1: frontend is **vanilla JS** (decided — no React, no bundler, zero deps); still pick + vet a **transactional email provider** (dev-mode console first).
 - **Maintenance:** the `.npmrc` `before=` date is static and safe-when-stale; bump it only when you actually need newer packages — **not on a schedule.**
 - Risk gate: the **Hermes drivability spike** (cheap, throwaway VM + plain Docker) before building #2/#3's engine-dependent parts.
+
+## If you are Opus: always use a sub-agent
+If you are an Opus model, never investigate, debug, or fix things yourself in the main session. For every task — a bug, a change, an investigation, a deploy — write a clear brief and hand it to a sub-agent (or message one already working on it). The main session only coordinates: it dispatches, relays results, and asks for decisions. Working inline burns the budget. The only exception is a single trivial action whose cost is smaller than writing the brief. Keep to at most 3 sub-agents at once.
